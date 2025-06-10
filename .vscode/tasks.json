@@ -1,0 +1,49 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build MCD (Debug)",
+			"type": "shell",
+			"command": "source ~/.cargo/env && cargo build",
+			"group": "build",
+			"problemMatcher": [
+				"$rustc"
+			]
+		},
+		{
+			"label": "Build MCD (Release)",
+			"type": "shell",
+			"command": "source ~/.cargo/env && cargo build --release",
+			"group": "build",
+			"problemMatcher": [
+				"$rustc"
+			]
+		},
+		{
+			"label": "Test MCD Binary",
+			"type": "shell",
+			"command": "source ~/.cargo/env && ./target/debug/mcd",
+			"args": ["test"],
+			"group": "test",
+			"dependsOn": "Build MCD (Debug)"
+		},
+		{
+			"label": "Run Cargo Check",
+			"type": "shell",
+			"command": "source ~/.cargo/env && cargo check",
+			"group": "build",
+			"problemMatcher": [
+				"$rustc"
+			]
+		},
+		{
+			"label": "Run Cargo Clippy",
+			"type": "shell",
+			"command": "source ~/.cargo/env && cargo clippy",
+			"group": "build",
+			"problemMatcher": [
+				"$rustc"
+			]
+		}
+	]
+}

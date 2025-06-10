@@ -1,0 +1,22 @@
+MCD - Enhanced Directory Navigation Tool
+Version: 1.0.0
+Build Date: 2025-06-08
+Rust Edition: 2021
+
+Features:
+- Bidirectional directory search (up and down tree)
+- Smart proximity-based sorting with exact/substring match logic
+- Interactive multiple match display
+- Shell integration with bash wrapper function
+- Zero external dependencies (stdlib only)
+- Cross-platform compatibility
+
+Performance:
+- Binary size: ~515KB (optimized release build)
+- Search depth: Limited to 3 levels for performance
+- Memory efficient recursive search implementation
+
+Architecture:
+- Core Rust binary for search logic
+- Bash wrapper function for shell integration
+- VS Code tasks for development workflow

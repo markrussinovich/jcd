@@ -1,0 +1,12 @@
+[package]
+name = "mcd"
+version = "1.0.1"
+edition = "2021"
+description = "Enhanced directory navigation tool with substring matching and smart selection"
+authors = ["GitHub Copilot Assistant"]
+license = "MIT"
+repository = "https://github.com/username/mcd"
+keywords = ["cli", "navigation", "directory", "filesystem", "productivity"]
+categories = ["command-line-utilities", "filesystem"]
+
+[dependencies]
