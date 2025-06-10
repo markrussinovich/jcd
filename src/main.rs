@@ -191,22 +191,25 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
     use std::collections::VecDeque;
     
     let mut queue = VecDeque::new();
-    let mut matches = Vec::new();
+    let mut all_matches = Vec::new();
     queue.push_back((current_dir.to_path_buf(), 0));
     let search_lower = search_term.to_lowercase();
-    let max_depth = 8; // Increase depth limit to ensure we find matches
+    let max_depth = 8;
     
     while let Some((current_path, depth)) = queue.pop_front() {
         if depth > max_depth {
             continue;
         }
         
+        let mut level_matches = Vec::new();
+        let mut level_subdirs = Vec::new();
+        
         if let Ok(entries) = fs::read_dir(&current_path) {
             // Collect and sort entries for deterministic order
             let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
             entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
             
-            // First pass: look for all matches at current level
+            // Process all entries at this level
             for entry in &entries {
                 if let Ok(metadata) = entry.metadata() {
                     if metadata.is_dir() {
@@ -218,39 +221,52 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
                             // Check for any match (exact or partial)
                             if name_lower == search_lower {
                                 // Exact match
-                                matches.push(DirectoryMatch {
+                                level_matches.push(DirectoryMatch {
                                     path: path.clone(),
                                     depth_from_current: if depth == 0 { 0 } else { depth as i32 },
                                     match_quality: MatchQuality::ExactDown,
                                 });
                             } else if name_lower.contains(&search_lower) {
                                 // Partial match
-                                matches.push(DirectoryMatch {
+                                level_matches.push(DirectoryMatch {
                                     path: path.clone(),
                                     depth_from_current: if depth == 0 { 0 } else { depth as i32 },
                                     match_quality: MatchQuality::PartialDown,
                                 });
                             }
-                        }
-                    }
-                }
-            }
-            
-            // Second pass: add subdirectories to queue for next level
-            for entry in &entries {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_dir() {
-                        let path = entry.path();
-                        if depth < max_depth {
-                            queue.push_back((path, depth + 1));
+                            
+                            // Collect subdirectories for next level
+                            if depth < max_depth {
+                                level_subdirs.push((path.clone(), depth + 1));
+                            }
                         }
                     }
                 }
             }
         }
+        
+        // Add matches from this level
+        all_matches.extend(level_matches.clone());
+        
+        // Key logic: If we found matches at immediate subdirectory level (depth 1), stop here
+        if depth == 0 && !level_matches.is_empty() {
+            return finalize_matches(level_matches);
+        }
+        
+        // If we found matches at any other depth level and have existing matches, 
+        // check if we should stop (found matches at this level)
+        if depth > 0 && !level_matches.is_empty() && !all_matches.is_empty() {
+            // We found matches at this level - stop searching deeper
+            return finalize_matches(all_matches);
+        }
+        
+        // Add subdirectories to queue for next level search
+        for (subdir, next_depth) in level_subdirs {
+            queue.push_back((subdir, next_depth));
+        }
     }
     
-    finalize_matches(matches)
+    finalize_matches(all_matches)
 }
 
 fn finalize_matches(mut matches: Vec<DirectoryMatch>) -> Vec<DirectoryMatch> {
