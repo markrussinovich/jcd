@@ -2,7 +2,7 @@
 name = "mcd"
 version = "1.0.1"
 edition = "2021"
-description = "Enhanced directory navigation tool with substring matching and smart selection"
+description = "Enhanced directory navigation tool with substring matching and tab completion cycling"
 authors = ["GitHub Copilot Assistant"]
 license = "MIT"
 repository = "https://github.com/username/mcd"

@@ -40,7 +40,6 @@
 mcd <substring>        # Navigate to directory matching substring
 mcd <absolute_path>    # Navigate to absolute path
 mcd <path/pattern>     # Navigate using path-like patterns
-mcd --tab              # Cycle through previous matches
 ```
 
 ### Examples
@@ -60,34 +59,41 @@ mcd /home/user/projects
 
 # Use path patterns
 mcd projects/src    # Find 'src' within 'projects'
-
-# Cycle through multiple matches
-mcd foo             # Shows multiple matches
-mcd --tab           # Cycle to next match
-mcd --tab           # Cycle to next match
 ```
 
-### Multiple Matches & Tab Cycling
+### Multiple Matches & Tab Completion
 
-When multiple directories match your search term, `mcd` shows all options and navigates to the best match. You can then use `mcd --tab` to cycle through the other matches:
+When multiple directories match your search term, `mcd` automatically navigates to the best match (highest priority). However, you can use **tab completion** to cycle through all available matches before executing the command:
 
 ```bash
-$ mcd foo
-Found 4 matches (use 'mcd --tab' to cycle):
-→ 1. /path/to/foo1 (going here)
-  2. /path/to/foo2  
-  3. /path/to/foo3
-  4. /path/to/foobaz
+# Type 'mcd fo' and press Tab - cycles through matches
+$ mcd fo<Tab>
+mcd /.font-unix
 
-$ mcd --tab
-Cycling matches for 'foo':
-  1. /path/to/foo1
-→ 2. /path/to/foo2 (going here)
-  3. /path/to/foo3
-  4. /path/to/foobaz
+# Press Tab again to cycle to next match
+$ mcd /.font-unix<Tab>  
+mcd /foo
+
+# Press Tab again to cycle to next match
+$ mcd /foo<Tab>
+mcd /some/other/folder
+
+# Press Enter to navigate to the currently shown match
+$ mcd /foo<Enter>
+# Now in /foo directory
 ```
 
-The tool automatically goes to the first (best) match while showing you what other options were available.
+The tab completion works by:
+1. Finding all directories that match your search pattern
+2. Cycling through them in priority order (exact matches first, then partial matches)
+3. Allowing you to press Enter when you see the directory you want
+
+### Tab Completion Features
+
+- **Inline Cycling**: Tab repeatedly to cycle through all matches
+- **Smart Prioritization**: Exact matches shown before partial matches
+- **Proximity Sorting**: Closer directories (fewer levels away) shown first
+- **Trailing Slash Support**: Add `/` to explore subdirectories of the current match
 
 ## Search Algorithm
 
@@ -100,20 +106,25 @@ The MCD tool uses a sophisticated search and sorting algorithm with support for 
 
 ### Search Strategy
 - **Upward Search**: Traverses parent directories to find matches
-- **Downward Search**: Recursively searches subdirectories up to 3 levels deep
+- **Downward Search**: Recursively searches subdirectories up to 8 levels deep
 - **Pattern Matching**: For path patterns, searches for each component sequentially
+- **Comprehensive Match Collection**: Returns all matching directories for tab completion cycling
 - **Deduplication**: Removes duplicate paths that might be found through different search paths
 
 ### Sorting Priority
-1. **Proximity First**: Closer directories (fewer levels away) are prioritized
-2. **Exact vs Substring Behavior**:
-   - **Exact Matches**: When directory name exactly matches search term, parent directories are preferred
-   - **Substring Matches**: When search term is contained in directory name, child directories are preferred
+1. **Match Quality First**: Exact matches are prioritized over partial matches
+2. **Direction Priority**: 
+   - **Up-tree matches** (parent directories) have highest priority
+   - **Down-tree matches** (subdirectories) have lower priority
+3. **Proximity Within Category**: 
+   - For up-tree matches: closer to current directory first
+   - For down-tree matches: shallower matches first
+4. **Alphabetical**: Within same priority level, sorted alphabetically
 
 ### Example Behavior
-From directory `foo/foo1/foo2a`:
-- `mcd foo` → Goes to `foo3` (closest child match)
-- `mcd foo1` → Offers parent `foo1` first, then child `foo1` options
+From directory `/tmp`:
+- `mcd fo` → First offers `/.font-unix`, then `/foo`, then other matches containing "fo"
+- Tab completion cycles through: `/.font-unix` → `/foo` → `/some/folder` → etc.
 
 ## How It Works
 
@@ -121,31 +132,43 @@ The `mcd` tool works in two parts:
 
 1. **Rust Binary (`src/main.rs`)**: 
    - Performs the directory search and sorting
-   - Returns the best match for a given search term and index
+   - Returns **all matching directories** when given different index parameters
+   - Supports cycling through multiple matches via index parameter
    - Cannot change the parent shell's directory (fundamental limitation)
 
 2. **Shell Function (`mcd_function.sh`)**:
    - Wraps the Rust binary and handles directory changing
-   - Collects all matches to show the user available options
-   - Changes to the best match directory using the shell's `cd` command
+   - Provides intelligent tab completion that cycles through all matches
+   - Manages completion state to enable smooth cycling experience
+   - Changes to the selected directory using the shell's `cd` command
 
 ### Search Process
 
 1. **Search Up**: Looks through parent directories for matches
-2. **Search Down**: Recursively searches subdirectories (limited to 3 levels deep)
-3. **Smart Sorting**: 
-   - Prioritizes proximity (closer directories first)
-   - For exact matches: prefers parent directories  
-   - For substring matches: prefers child directories
-4. **Shell Integration**: Uses a bash wrapper function to change directories in the parent shell
+2. **Search Down**: Recursively searches subdirectories (up to 8 levels deep for performance)
+3. **Comprehensive Collection**: Gathers **all** matching directories (not just the first one)
+4. **Smart Sorting**: 
+   - Prioritizes match quality (exact vs partial)
+   - Sorts by proximity within each quality category
+   - Maintains consistent ordering for reliable tab completion
+5. **Shell Integration**: Uses a bash wrapper function with sophisticated tab completion cycling
 
 ## Technical Details
 
 - **Language**: Rust (for performance and reliability)
 - **Dependencies**: Standard library only (no external crates)
 - **Architecture**: Rust binary + bash wrapper function
-- **Search Depth**: Limited to 3 levels deep for performance
-- **Shell Support**: Bash (with tab completion)
+- **Search Depth**: Limited to 8 levels deep for performance
+- **Shell Support**: Bash (with advanced tab completion cycling)
+- **Recent Improvements**: Enhanced to return all matching directories for proper tab completion cycling
+
+## Recent Updates
+
+### v1.0.1 - Tab Completion Cycling Fix
+- **Fixed**: Tab completion now properly cycles through all matching directories
+- **Improved**: Binary now returns comprehensive match lists instead of single matches
+- **Enhanced**: Shell function state management for seamless cycling experience
+- **Example**: `mcd fo<Tab>` now cycles through `/.font-unix` → `/foo1` → other matches
 
 ## Development
 
@@ -192,12 +215,16 @@ cd mcd
 Or test the binary directly:
 
 ```bash
-# Test finding directories with 'src' in the name
-./target/release/mcd src 0
+# Test finding directories containing 'fo' - should return first match
+./target/release/mcd fo 0
+
+# Test cycling through matches - should return second match  
+./target/release/mcd fo 1
 
 # Test from different directory
 cd /tmp
-/path/to/mcd/target/release/mcd home 0
+/path/to/mcd/target/release/mcd fo 0  # Returns /.font-unix
+/path/to/mcd/target/release/mcd fo 1  # Returns /foo
 ```
 
 ## Contributing
@@ -220,11 +247,25 @@ Make sure you've:
 2. Sourced the `mcd_function.sh` script in your shell configuration file
 3. Reloaded your shell with `source ~/.bashrc`
 
+### Tab Completion Not Working
+If tab completion doesn't cycle through matches:
+1. Ensure `mcd_function.sh` is properly sourced
+2. Check that the binary path in `MCD_BINARY` is correct
+3. Test the binary directly: `/path/to/mcd fo 0` should return a directory
+4. Enable debug mode: `export MCD_DEBUG=1` to see completion details
+
 ### No Matches Found
 The tool searches with case-insensitive substring matching. Try:
 - Shorter or more general search terms
 - Checking if the target directory actually exists
 - Verifying you're in the right starting location
+- Testing with debug mode: `MCD_DEBUG=1 mcd <pattern>`
+
+### Tab Completion Shows Wrong Results
+If tab completion shows unexpected directories:
+- Remember that search includes both parent and child directories
+- Use more specific patterns to narrow results
+- Check current working directory as it affects search scope
 
 ### Binary Not Found Error
 Ensure the binary exists and has execute permissions:
