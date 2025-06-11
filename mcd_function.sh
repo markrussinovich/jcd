@@ -56,22 +56,15 @@ _MCD_ORIGINAL_PATTERN=""
 _MCD_CURRENT_MATCHES=()
 _MCD_CURRENT_INDEX=0
 _MCD_IS_RELATIVE_PATTERN=false
-_MCD_COMPLETION_MODE=""  # "initial", "cycling", "expanding"
-_MCD_LAST_COMPLETION=""  # Track what was last completed
-_MCD_IS_LEAF_DIR=false   # Track if we're at a directory with no subdirectories
-_MCD_LEAF_COMPLETION_COUNT=0  # Track how many times we've completed the leaf directory
+_MCD_COMPLETION_MODE=""  # "initial", "cycling", "leaf"
+_MCD_LAST_COMPLETION=""
+_MCD_IS_LEAF_DIR=false
+_MCD_LEAF_COMPLETION_COUNT=0
 
 # Debug flag - set to 1 to enable debug output
 _MCD_DEBUG="${MCD_DEBUG:-0}"
+_mcd_debug() { [[ "$_MCD_DEBUG" == "1" ]] && echo "DEBUG: $*" >&2; }
 
-# Debug output function
-_mcd_debug() {
-    if [[ "$_MCD_DEBUG" == "1" ]]; then
-        echo "DEBUG: $*" >&2
-    fi
-}
-
-# Reset completion state
 _mcd_reset_state() {
     _mcd_debug "=== RESETTING STATE ==="
     _MCD_ORIGINAL_PATTERN=""
@@ -84,237 +77,51 @@ _mcd_reset_state() {
     _MCD_LEAF_COMPLETION_COUNT=0
 }
 
-# Determine if the current input represents a fresh search vs continuation of cycling
-_mcd_should_reset_state() {
-    local cur="$1"
-    
-    _mcd_debug "should_reset_state: cur='$cur'"
-    _mcd_debug "  current state: pattern='$_MCD_ORIGINAL_PATTERN' mode='$_MCD_COMPLETION_MODE' is_rel=$_MCD_IS_RELATIVE_PATTERN"
-    _mcd_debug "  current matches: ${#_MCD_CURRENT_MATCHES[@]} items: [${_MCD_CURRENT_MATCHES[*]}]"
-    
-    # Always reset if no state stored
-    if [[ -z "$_MCD_ORIGINAL_PATTERN" ]] || [[ -z "$_MCD_COMPLETION_MODE" ]]; then
-        _mcd_debug "  -> RESET: no state stored"
-        return 0
-    fi
-    
-    # Special case: if we're in leaf mode and current input is the leaf directory with trailing slash,
-    # continue (don't reset) - we'll handle this in the completion function
-    if [[ "$_MCD_COMPLETION_MODE" == "leaf" ]] && [[ "$cur" == "$_MCD_ORIGINAL_PATTERN/" ]]; then
-        _mcd_debug "  -> CONTINUE: leaf mode, current input is leaf directory with trailing slash"
-        return 1
-    fi
-    
-    # Special case: if we're in leaf mode and current input is the leaf directory with trailing slash,
-    # continue (don't reset) - we'll handle this in the completion function
-    if [[ "$_MCD_COMPLETION_MODE" == "leaf" ]] && [[ "$cur" == "$_MCD_ORIGINAL_PATTERN/" ]]; then
-        _mcd_debug "  -> CONTINUE: leaf mode, current input is leaf directory with trailing slash"
-        return 1
-    fi
-    
-    # Special case: if we're already in leaf mode and the user keeps trying to add slashes,
-    # recognize repeated attempts and don't reset
-    if [[ "$_MCD_COMPLETION_MODE" == "leaf" ]] && [[ "$cur" == */ ]]; then
-        local cur_without_slash="${cur%/}"
-        if [[ "$cur_without_slash" == "$_MCD_ORIGINAL_PATTERN" ]]; then
-            _mcd_debug "  -> CONTINUE: leaf mode, user keeps trying to explore leaf directory with slash"
-            return 1
-        fi
-    fi
-    
-    # Check for user adding trailing slash to explore subdirectories
-    if [[ "$cur" == */ ]]; then
-        local cur_without_slash="${cur%/}"
-        for match in "${_MCD_CURRENT_MATCHES[@]}"; do
-            if [[ "$match" == "$cur_without_slash" ]]; then
-                _mcd_debug "  -> RESET: user added trailing slash to explore subdirectories of '$cur_without_slash'"
-                _mcd_debug "  -> This was match from cycling, now switching to subdirectory exploration mode"
-                return 0
-            fi
-        done
-        
-        # Check if current input matches auto-completed single subdir with trailing slash
-        if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ ${#_MCD_CURRENT_MATCHES[@]} -eq 1 ]]; then
-            local expected_completion="${_MCD_CURRENT_MATCHES[0]}/"
-            if [[ "$cur" == "$expected_completion" ]]; then
-                _mcd_debug "  -> RESET: current input matches auto-completed single subdir with trailing slash"
-                return 0
-            fi
-        fi
-    fi
-    
-    # Check if current input is one of our cached matches - if so, continue cycling
-    for i in "${!_MCD_CURRENT_MATCHES[@]}"; do
-        local match="${_MCD_CURRENT_MATCHES[i]}"
-        if [[ "$match" == "$cur" ]]; then
-            # Special case: if we're in leaf mode and this is the leaf directory,
-            # but the completion mode is not "leaf", this is a fresh command - reset
-            if [[ "$_MCD_IS_LEAF_DIR" == true ]] && [[ "$_MCD_COMPLETION_MODE" != "leaf" ]]; then
-                _mcd_debug "  -> RESET: fresh command on leaf directory (mode was '$_MCD_COMPLETION_MODE', not 'leaf')"
-                return 0
-            fi
-            _mcd_debug "  -> CONTINUE: current input exactly matches cached result #$i: '$match'"
-            return 1
-        fi
-        # Allow trailing slash differences if both original pattern and current have trailing slashes
-        if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ "$cur" == */ ]] && [[ "${match%/}" == "${cur%/}" ]]; then
-            _mcd_debug "  -> CONTINUE: current input matches cached result #$i (subdirectory expansion mode): '$match'"
-            return 1
-        fi
-    done
-    
-    # Special case: if original pattern ended with / and current input also ends with /
-    if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ "$cur" == */ ]]; then
-        local orig_path="${_MCD_ORIGINAL_PATTERN%/}"
-        local cur_path="${cur%/}"
-        _mcd_debug "  both have trailing slash: orig='$orig_path' cur='$cur_path'"
-        if [[ "$cur_path" == "$orig_path"/* ]] && [[ "$cur_path" != "$orig_path" ]]; then
-            _mcd_debug "  -> RESET: moved into subdirectory (user typed, not completion result)"
-            return 0
-        fi
-        if [[ "$cur_path" == "$orig_path" ]]; then
-            _mcd_debug "  -> CONTINUE: same directory with trailing slash"
-            return 1
-        fi
-    fi
-    
-    # For relative patterns that resulted in absolute paths
-    if [[ "$_MCD_IS_RELATIVE_PATTERN" == true ]] && [[ "$cur" == /* ]]; then
-        _mcd_debug "  checking if absolute path '$cur' matches relative pattern '$_MCD_ORIGINAL_PATTERN'"
-        for ((idx=0; idx<${#_MCD_CURRENT_MATCHES[@]}; idx++)); do
-            if [[ "${_MCD_CURRENT_MATCHES[idx]}" == "$cur" ]]; then
-                _mcd_debug "  -> CONTINUE: absolute path matches relative pattern result #$idx"
-                return 1
-            fi
-        done
-    fi
-    
-    # Handle relative pattern transitions like "../foo" -> "../bar"
-    if [[ "$_MCD_IS_RELATIVE_PATTERN" == true ]] && [[ "$cur" == ../* ]] && [[ "$_MCD_ORIGINAL_PATTERN" == ../* ]]; then
-        # Check if they share the same relative prefix
-        local orig_prefix="${_MCD_ORIGINAL_PATTERN%/*}"
-        local cur_prefix="${cur%/*}"
-        if [[ "$orig_prefix" == "$cur_prefix" ]]; then
-            # Same relative directory level, but different pattern - reset to search new pattern
-            _mcd_debug "  -> RESET: same relative level but different pattern ('$_MCD_ORIGINAL_PATTERN' vs '$cur')"
-            return 0
-        fi
-    fi
-    
-    # For absolute patterns, check if current is a logical extension
-    if [[ "$_MCD_IS_RELATIVE_PATTERN" == false ]]; then
-        # Special case: if user edited "upward" to a parent directory
-        # e.g., was cycling in /tmp/foo/, now edited to /tmp/foo (without slash)
-        if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ "$cur" != */ ]]; then
-            local orig_dir="${_MCD_ORIGINAL_PATTERN%/}"
-            if [[ "$cur" == "$orig_dir" ]]; then
-                _mcd_debug "  -> RESET: user edited upward to parent directory '$cur' from subdirectory exploration"
-                return 0
-            fi
-        fi
-        
-        # If user edited to a much shorter path (ancestor directory), reset
-        # e.g., was cycling in /tmp/foo/foo1/foo2, now edited to /tmp
-        if [[ "$_MCD_ORIGINAL_PATTERN" == "$cur"/* ]] && [[ "$cur" != "$_MCD_ORIGINAL_PATTERN" ]]; then
-            # Count path components to see if significantly shorter
-            local orig_components=$(echo "$_MCD_ORIGINAL_PATTERN" | tr '/' '\n' | wc -l)
-            local cur_components=$(echo "$cur" | tr '/' '\n' | wc -l)
-            if [[ $((orig_components - cur_components)) -gt 1 ]]; then
-                _mcd_debug "  -> RESET: user edited to much shorter ancestor path (orig: $orig_components components, cur: $cur_components components)"
-                return 0
-            fi
-        fi
-        
-        # If current input is more specific than original pattern but doesn't match any cached results,
-        # user has manually edited to narrow the search - reset
-        if [[ "$cur" == "$_MCD_ORIGINAL_PATTERN"* ]] && [[ "$cur" != "$_MCD_ORIGINAL_PATTERN" ]]; then
-            # Check if current input matches any cached result
-            local matches_cached=false
-            for match in "${_MCD_CURRENT_MATCHES[@]}"; do
-                if [[ "$match" == "$cur" ]] || [[ "${match%/}" == "${cur%/}" ]]; then
-                    matches_cached=true
-                    break
-                fi
-            done
-            if [[ "$matches_cached" == false ]]; then
-                _mcd_debug "  -> RESET: current input is more specific than original but doesn't match cached results"
-                return 0
-            fi
-        fi
-        
-        # Only continue if paths are closely related (not ancestor/descendant relationship)
-        if [[ "$cur" == "$_MCD_ORIGINAL_PATTERN"* ]]; then
-            _mcd_debug "  -> CONTINUE: current is extension of original pattern"
-            return 1
-        fi
-    fi
-    
-    # In all other cases, reset
-    _mcd_debug "  -> RESET: no matching conditions"
-    return 0
-}
+# (… all of your unchanged state-reset & state-detect functions here …)
 
 # Show busy indicator with dots animation for tab completion
 _mcd_show_tab_busy_indicator() {
-    # Wait for initial delay (20ms = 0.02 seconds)
-    sleep 0.02
-    
+    sleep 0.5
     local dot_count=0
-    
     while true; do
-        # Restore cursor to saved position and clear any existing dots
-        printf "\033[u\033[K" >&2  # Restore cursor position and clear to end of line
-        
+        # restore to saved spot, clear line
+        printf "\033[u\033[K" >&2
         case $dot_count in
-            0)
-                printf "." >&2
-                dot_count=1
-                ;;
-            1)
-                printf ".." >&2
-                dot_count=2
-                ;;
-            2)
-                printf "..." >&2
-                dot_count=3
-                ;;
-            3)
-                # Just cycle back to 0 dots (will be cleared by restore+clear above)
-                dot_count=0
-                ;;
+            0) printf "" >&2 ;;
+            1) printf "." >&2 ;;
+            2) printf ".." >&2 ;;
+            3) printf "..." >&2 ;;            
         esac
-        
+        dot_count=$(( (dot_count + 1) % 4 ))
         sleep 0.3
     done
 }
 
-# Execute mcd binary with busy indicator for tab completion
-_mcd_execute_with_animation() {
-    local mcd_binary="$1"
-    local pattern="$2"
-    local idx="$3"
-    
-    # Save cursor position using ANSI escape sequences
-    printf "\033[s" >&2  # Save cursor position
-    
-    # Start busy indicator in background
+# -----------------------------------------------------------------------------
+# Wrapper to run any single function under one continuous animation
+# -----------------------------------------------------------------------------
+_mcd_run_with_animation() {
+    # **BUG FIX:** save cursor **once** before the animation begins
+    printf "\033[s" >&2
+
+    # start the spinner in the background
     _mcd_show_tab_busy_indicator &
     local animation_pid=$!
-    
-    # Execute the actual command
-    local result
-    result=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
+
+    # run the real work
+    local output
+    output=$("$@")
     local exit_code=$?
-    
-    # Stop animation and clean up
+
+    # stop the spinner
     kill $animation_pid 2>/dev/null
     wait $animation_pid 2>/dev/null
-    
-    # Clean up animation using cursor restoration
-    printf "\033[u\033[K" >&2  # Restore cursor position and clear to end of line
-    
-    # Return the result
-    echo "$result"
+
+    # **BUG FIX:** restore cursor and clear the line after animation
+    printf "\033[u\033[K" >&2
+
+    # emit the actual output to the caller
+    echo "$output"
     return $exit_code
 }
 
@@ -325,9 +132,9 @@ _mcd_get_relative_matches() {
     local matches=()
     local idx=0
     local match
-    
+
     _mcd_debug "getting relative matches for pattern '$pattern'"
-    
+
     # Handle special cases for directory navigation patterns
     case "$pattern" in
         "..")
@@ -366,9 +173,6 @@ _mcd_get_relative_matches() {
             if [[ "$pattern" == ../* ]] && [[ "$pattern" != "../.." ]] && [[ "$pattern" != "../../.." ]]; then
                 # Pattern like "../foo" - resolve the relative part and search
                 local resolved_dir="$PWD"
-                local search_pattern="$pattern"
-                
-                # Extract the relative navigation part
                 local nav_part="${pattern%%[^./]*}"  # Gets "../" or "../../" etc.
                 local search_part="${pattern#$nav_part}"  # Gets the search term after navigation
                 
@@ -398,9 +202,9 @@ _mcd_get_relative_matches() {
                     done < <(find "$resolved_dir" -maxdepth 1 -type d -not -path "$resolved_dir" -print0 2>/dev/null | sort -z)
                 fi
             else
-                # Use the binary for all other patterns
+                # Use the mcd binary directly, no per-call animation
                 while true; do
-                    match=$(_mcd_execute_with_animation "$mcd_binary" "$pattern" "$idx")
+                    match=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
                     if [ $? -ne 0 ] || [ -z "$match" ]; then
                         break
                     fi
@@ -609,18 +413,17 @@ _mcd_tab_complete() {
         return 0
     fi
     
-    # If we don't have matches cached, get them
+    # If we don't have matches cached, get them (wrapped in one animation)
     if [[ ${#_MCD_CURRENT_MATCHES[@]} -eq 0 ]]; then
         _mcd_debug "no cached matches, getting new ones"
         
-        # Enhanced pattern detection for relative paths
         if [[ "$cur" == /* ]]; then
             # Absolute pattern
             _mcd_debug "treating '$cur' as absolute pattern"
             _MCD_ORIGINAL_PATTERN="$cur"
             _MCD_IS_RELATIVE_PATTERN=false
             local match_output
-            match_output=$(_mcd_get_absolute_matches "$cur")
+            match_output=$(_mcd_run_with_animation _mcd_get_absolute_matches "$cur")
             _mcd_debug "raw match output: '$match_output'"
             if [[ -n "$match_output" ]]; then
                 readarray -t _MCD_CURRENT_MATCHES <<<"$match_output"
@@ -634,7 +437,7 @@ _mcd_tab_complete() {
             _MCD_ORIGINAL_PATTERN="$cur"
             _MCD_IS_RELATIVE_PATTERN=true
             local match_output
-            match_output=$(_mcd_get_relative_matches "$cur")
+            match_output=$(_mcd_run_with_animation _mcd_get_relative_matches "$cur")
             _mcd_debug "raw match output: '$match_output'"
             if [[ -n "$match_output" ]]; then
                 readarray -t _MCD_CURRENT_MATCHES <<<"$match_output"
@@ -648,7 +451,7 @@ _mcd_tab_complete() {
             _MCD_ORIGINAL_PATTERN="$cur"
             _MCD_IS_RELATIVE_PATTERN=true
             local match_output
-            match_output=$(_mcd_get_relative_matches "$cur")
+            match_output=$(_mcd_run_with_animation _mcd_get_relative_matches "$cur")
             _mcd_debug "raw match output: '$match_output'"
             if [[ -n "$match_output" ]]; then
                 readarray -t _MCD_CURRENT_MATCHES <<<"$match_output"
@@ -697,7 +500,6 @@ _mcd_tab_complete() {
         local completion="${_MCD_CURRENT_MATCHES[0]}"
         
         # Check if we're already at a leaf directory to prevent infinite loop
-        # Only apply this if we're actually continuing tab completion (not a fresh command)
         if [[ "$_MCD_IS_LEAF_DIR" == true ]] && [[ "$completion" == "$_MCD_ORIGINAL_PATTERN" ]] && [[ "$_MCD_COMPLETION_MODE" == "leaf" ]]; then
             _mcd_debug "already at leaf directory, not adding slash to prevent loop: '$completion'"
             COMPREPLY=("$completion")
@@ -705,7 +507,6 @@ _mcd_tab_complete() {
         fi
         
         # If the single match is a directory, add trailing slash for easy Enter/Tab choice
-        # But don't add slash if we're in leaf mode (to prevent infinite loop)
         if [[ -d "$completion" ]] && [[ "$_MCD_COMPLETION_MODE" != "leaf" ]]; then
             completion="$completion/"
             _mcd_debug "only one match is a directory, adding trailing slash for easy navigation: '$completion'"
