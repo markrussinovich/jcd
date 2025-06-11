@@ -152,8 +152,8 @@ fn search_with_progress(current_dir: &Path, search_term: &str) -> Vec<DirectoryM
         indicator_handle.join().unwrap();
         
         // Clear the progress line
-        eprint!("\r\x1b[K");
-        io::stderr().flush().unwrap();
+            eprint!("\r\x1b[K");
+            io::stderr().flush().unwrap();
     } else {
         // Search completed quickly, just wait for it
         search_handle.join().unwrap();
@@ -295,9 +295,60 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
     let search_lower = search_term.to_lowercase();
     let max_depth = 8;
     
+    // First, search immediate subdirectories (depth 1) to check for early stopping
+    let mut immediate_matches = Vec::new();
+    
+    // Process current directory (depth 0) first
+    if let Ok(entries) = fs::read_dir(current_dir) {
+        let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        
+        for entry in &entries {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_dir() {
+                    let path = entry.path();
+                    if let Some(name) = path.file_name() {
+                        let name_str = name.to_string_lossy();
+                        let name_lower = name_str.to_lowercase();
+                        
+                        // Check for any match in immediate subdirectories
+                        if name_lower == search_lower {
+                            // Exact match
+                            let dir_match = DirectoryMatch {
+                                path: path.clone(),
+                                depth_from_current: 1,
+                                match_quality: MatchQuality::ExactDown,
+                            };
+                            immediate_matches.push(dir_match.clone());
+                            all_matches.push(dir_match);
+                        } else if name_lower.contains(&search_lower) {
+                            // Partial match
+                            let dir_match = DirectoryMatch {
+                                path: path.clone(),
+                                depth_from_current: 1,
+                                match_quality: MatchQuality::PartialDown,
+                            };
+                            immediate_matches.push(dir_match.clone());
+                            all_matches.push(dir_match);
+                        }
+                        
+                        // Add subdirectories to queue for potential deeper search
+                        queue.push_back((path.clone(), 1));
+                    }
+                }
+            }
+        }
+    }
+    
+    // If there's exactly one match in immediate subdirectories, return early
+    if immediate_matches.len() == 1 {
+        return finalize_matches(all_matches);
+    }
+    
+    // Otherwise, continue with breadth-first search for deeper levels
     while let Some((current_path, depth)) = queue.pop_front() {
-        if depth > max_depth {
-            continue;
+        if depth == 0 || depth > max_depth {
+            continue; // Skip depth 0 (already processed) and beyond max depth
         }
         
         let mut level_matches = Vec::new();
@@ -322,14 +373,14 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
                                 // Exact match
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
-                                    depth_from_current: if depth == 0 { 0 } else { depth as i32 },
+                                    depth_from_current: depth as i32,
                                     match_quality: MatchQuality::ExactDown,
                                 });
                             } else if name_lower.contains(&search_lower) {
                                 // Partial match
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
-                                    depth_from_current: if depth == 0 { 0 } else { depth as i32 },
+                                    depth_from_current: depth as i32,
                                     match_quality: MatchQuality::PartialDown,
                                 });
                             }
@@ -345,10 +396,7 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
         }
         
         // Add matches from this level
-        all_matches.extend(level_matches.clone());
-        
-        // Continue searching all levels to find ALL matching directories
-        // Don't stop early - we want to find all matches across the tree
+        all_matches.extend(level_matches);
         
         // Add subdirectories to queue for next level search
         for (subdir, next_depth) in level_subdirs {

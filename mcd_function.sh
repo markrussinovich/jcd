@@ -221,9 +221,6 @@ _mcd_show_tab_busy_indicator() {
     # Wait for initial delay (20ms = 0.02 seconds)
     sleep 0.02
     
-    # Save cursor position using ANSI escape sequences
-    printf "\033[s" >&2  # Save cursor position
-    
     local dot_count=0
     
     while true; do
@@ -258,6 +255,9 @@ _mcd_execute_with_animation() {
     local mcd_binary="$1"
     local pattern="$2"
     local idx="$3"
+    
+    # Save cursor position using ANSI escape sequences
+    printf "\033[s" >&2  # Save cursor position
     
     # Start busy indicator in background
     _mcd_show_tab_busy_indicator &
