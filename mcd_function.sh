@@ -217,24 +217,25 @@ _mcd_should_reset_state() {
 }
 
 # Show busy indicator with dots animation for tab completion
-DOT_COUNT=0
 _mcd_show_tab_busy_indicator() {
     # Wait for initial delay (20ms = 0.02 seconds)
     sleep 0.02
+    
     while true; do
-        # Show one dot, then two, then three, then clear and repeat
+        # Show one dot
         printf "." >&2
-        DOT_COUNT=1
         sleep 0.2
+        
+        # Show second dot
         printf "." >&2
-        DOT_COUNT=2
         sleep 0.2
+        
+        # Show third dot
         printf "." >&2
-        DOT_COUNT=3
         sleep 0.2
-        # Clear the three dots with backspaces and spaces
-        printf "\b\b\b  \b" >&2
-        DOT_COUNT=0
+        
+        # Clear all three dots and go back to start position
+        printf "\b\b\b   \b\b\b" >&2
         sleep 0.2
     done
 }
@@ -257,10 +258,8 @@ _mcd_execute_with_animation() {
     # Stop animation and clear any remaining dots
     kill $animation_pid 2>/dev/null
     wait $animation_pid 2>/dev/null
-    # Clear any dots that might be showing (up to 3) and return cursor to proper position
-    for ((i=0; i<DOT_COUNT; i++)); do
-        printf "\b" >&2
-    done
+    # Clear any dots that might be showing (up to 3 dots)
+    printf "\b\b\b   \b\b\b" >&2
     
     # Return the result
     echo "$result"
