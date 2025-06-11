@@ -3,7 +3,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process,
+    sync::{Arc, Mutex},
+    thread,
     time::{Duration, Instant},
+    io::{self, Write},
 };
 
 // Configuration constants for performance tuning
@@ -67,6 +70,9 @@ fn main() {
         0
     };
     
+    // Check for quiet mode flag (used during tab completion)
+    let quiet_mode = args.len() > 3 && args[3] == "--quiet";
+    
     let current_dir = match env::current_dir() {
         Ok(dir) => dir,
         Err(e) => {
@@ -75,18 +81,112 @@ fn main() {
         }
     };
     
-    eprintln!("DEBUG: Searching for '{}' from {}", search_term, current_dir.display());
+    // eprintln!("DEBUG: Searching for '{}' from {}", search_term, current_dir.display());
     
-    let matches = find_matching_directories(&current_dir, search_term);
+    // Use threaded search with busy indicator (unless in quiet mode)
+    let matches = if quiet_mode {
+        find_matching_directories(&current_dir, search_term)
+    } else {
+        search_with_progress(&current_dir, search_term)
+    };
     
-    eprintln!("DEBUG: Found {} matches", matches.len());
+    // eprintln!("DEBUG: Found {} matches", matches.len());
     
     if matches.is_empty() || tab_index >= matches.len() {
-        eprintln!("DEBUG: No matches or index out of range");
+        // eprintln!("DEBUG: No matches or index out of range");
         process::exit(1);
     }
     
     println!("{}", matches[tab_index].path.display());
+}
+
+fn search_with_progress(current_dir: &Path, search_term: &str) -> Vec<DirectoryMatch> {
+    let current_dir = current_dir.to_path_buf();
+    let search_term = search_term.to_string();
+    
+    // Shared state for the search result
+    let result = Arc::new(Mutex::new(None));
+    let result_clone = Arc::clone(&result);
+    
+    // Shared flag to indicate when search is complete
+    let search_complete = Arc::new(Mutex::new(false));
+    let search_complete_clone = Arc::clone(&search_complete);
+    
+    // Start the search in a background thread
+    let search_handle = thread::spawn(move || {
+        let matches = find_matching_directories(&current_dir, &search_term);
+        
+        // Store the result
+        {
+            let mut result_guard = result_clone.lock().unwrap();
+            *result_guard = Some(matches);
+        }
+        
+        // Mark search as complete
+        {
+            let mut complete_guard = search_complete_clone.lock().unwrap();
+            *complete_guard = true;
+        }
+    });
+    
+    // Give search a brief moment to complete (20ms)
+    thread::sleep(Duration::from_millis(20));
+    
+    // Check if search is still running
+    let show_progress = {
+        let complete_guard = search_complete.lock().unwrap();
+        !*complete_guard
+    };
+    
+    if show_progress {
+        // Start the busy indicator in a separate thread
+        let search_complete_clone = Arc::clone(&search_complete);
+        let indicator_handle = thread::spawn(move || {
+            show_busy_indicator(&search_complete_clone);
+        });
+        
+        // Wait for the search to complete
+        search_handle.join().unwrap();
+        
+        // Wait for indicator to finish
+        indicator_handle.join().unwrap();
+        
+        // Clear the progress line
+        eprint!("\r\x1b[K");
+        io::stderr().flush().unwrap();
+    } else {
+        // Search completed quickly, just wait for it
+        search_handle.join().unwrap();
+    }
+    
+    // Return the result
+    let result_guard = result.lock().unwrap();
+    result_guard.as_ref().unwrap().clone()
+}
+
+fn show_busy_indicator(search_complete: &Arc<Mutex<bool>>) {
+    let dots = [" .", " ..", " ..."];
+    let mut dot_index = 0;
+    
+    loop {
+        // Check if search is complete
+        {
+            let complete_guard = search_complete.lock().unwrap();
+            if *complete_guard {
+                break;
+            }
+        }
+        
+        // Show the dots animation with carriage return
+        eprint!("\r{}", dots[dot_index]);
+        io::stderr().flush().unwrap();
+        
+        // Update dot index
+        dot_index = (dot_index + 1) % dots.len();
+        
+        // Wait before next update
+        thread::sleep(Duration::from_millis(200));
+    }
 }
 
 fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<DirectoryMatch> {

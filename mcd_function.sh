@@ -17,7 +17,7 @@ mcd() {
     fi
     # Get the best match (index 0)
     local dest
-    dest=$("$mcd_binary" "$search_term" 0 2>/dev/null)
+    dest=$("$mcd_binary" "$search_term" 0)
     if [ $? -ne 0 ] || [ -z "$dest" ]; then
         echo "No directories found matching '$search_term'"
         return 1
@@ -216,6 +216,57 @@ _mcd_should_reset_state() {
     return 0
 }
 
+# Show busy indicator with dots animation for tab completion
+DOT_COUNT=0
+_mcd_show_tab_busy_indicator() {
+    # Wait for initial delay (20ms = 0.02 seconds)
+    sleep 0.02
+    while true; do
+        # Show one dot, then two, then three, then clear and repeat
+        printf "." >&2
+        DOT_COUNT=1
+        sleep 0.2
+        printf "." >&2
+        DOT_COUNT=2
+        sleep 0.2
+        printf "." >&2
+        DOT_COUNT=3
+        sleep 0.2
+        # Clear the three dots with backspaces and spaces
+        printf "\b\b\b  \b" >&2
+        DOT_COUNT=0
+        sleep 0.2
+    done
+}
+
+# Execute mcd binary with busy indicator for tab completion
+_mcd_execute_with_animation() {
+    local mcd_binary="$1"
+    local pattern="$2"
+    local idx="$3"
+    
+    # Start busy indicator in background
+    _mcd_show_tab_busy_indicator &
+    local animation_pid=$!
+    
+    # Execute the actual command
+    local result
+    result=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
+    local exit_code=$?
+    
+    # Stop animation and clear any remaining dots
+    kill $animation_pid 2>/dev/null
+    wait $animation_pid 2>/dev/null
+    # Clear any dots that might be showing (up to 3) and return cursor to proper position
+    for ((i=0; i<DOT_COUNT; i++)); do
+        printf "\b" >&2
+    done
+    
+    # Return the result
+    echo "$result"
+    return $exit_code
+}
+
 # Get all matches for a relative pattern
 _mcd_get_relative_matches() {
     local pattern="$1"
@@ -227,7 +278,7 @@ _mcd_get_relative_matches() {
     _mcd_debug "getting relative matches for pattern '$pattern'"
     
     while true; do
-        match=$("$mcd_binary" "$pattern" "$idx" 2>/dev/null)
+        match=$(_mcd_execute_with_animation "$mcd_binary" "$pattern" "$idx")
         if [ $? -ne 0 ] || [ -z "$match" ]; then
             break
         fi
