@@ -230,17 +230,13 @@ fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<Direc
     
     // New comprehensive search logic - find ALL matches first, then sort by priority
     
-    // 1. Search up for exact matches, then partial matches
+    // 1. Search up for exact matches, then partial matches (direct path to root only)
     let up_matches = search_up_tree_with_priority(current_dir, search_term);
     matches.extend(up_matches);
     
-    // 2. Search down for all matches (exact and partial)
+    // 2. Search down for all matches (exact and partial) from current directory only
     let down_matches = search_down_breadth_first_all(current_dir, search_term);
     matches.extend(down_matches);
-    
-    // 3. Search sibling directories and their descendants
-    let sibling_matches = search_siblings_and_beyond(current_dir, search_term);
-    matches.extend(sibling_matches);
     
     // 4. Return all matches sorted by priority
     if !matches.is_empty() {
@@ -713,22 +709,3 @@ fn search_breadth_first(
     }
 }
 
-fn search_siblings_and_beyond(current_dir: &Path, search_term: &str) -> Vec<DirectoryMatch> {
-    let mut matches = Vec::new();
-    
-    // If we have a parent, search from parent to find siblings and their descendants
-    if let Some(parent) = current_dir.parent() {
-        // Search siblings (same level as current directory)
-        let sibling_matches = search_down_breadth_first_all(parent, search_term);
-        
-        // Filter out matches that are the current directory or its descendants
-        // to avoid duplicates with the main down search
-        for m in sibling_matches {
-            if !m.path.starts_with(current_dir) {
-                matches.push(m);
-            }
-        }
-    }
-    
-    matches
-}
