@@ -221,30 +221,34 @@ _mcd_show_tab_busy_indicator() {
     # Wait for initial delay (20ms = 0.02 seconds)
     sleep 0.02
     
-    # Create a temporary file to track dot count for cleanup
-    local dot_count_file="/tmp/mcd_dots_$$"
+    # Save cursor position using ANSI escape sequences
+    printf "\033[s" >&2  # Save cursor position
+    
+    local dot_count=0
     
     while true; do
-        # Show progressive dots: . then .. then ... then clear and repeat
+        # Restore cursor to saved position and clear any existing dots
+        printf "\033[u\033[K" >&2  # Restore cursor position and clear to end of line
         
-        # Show one dot
-        printf "." >&2
-        echo "1" > "$dot_count_file"
-        sleep 0.3
+        case $dot_count in
+            0)
+                printf "." >&2
+                dot_count=1
+                ;;
+            1)
+                printf ".." >&2
+                dot_count=2
+                ;;
+            2)
+                printf "..." >&2
+                dot_count=3
+                ;;
+            3)
+                # Just cycle back to 0 dots (will be cleared by restore+clear above)
+                dot_count=0
+                ;;
+        esac
         
-        # Show second dot
-        printf "." >&2
-        echo "2" > "$dot_count_file"
-        sleep 0.3
-        
-        # Show third dot
-        printf "." >&2
-        echo "3" > "$dot_count_file"
-        sleep 0.3
-        
-        # Clear the three dots: erase them one by one
-        printf "\b \b\b \b\b \b" >&2
-        echo "0" > "$dot_count_file"
         sleep 0.3
     done
 }
@@ -255,10 +259,6 @@ _mcd_execute_with_animation() {
     local pattern="$2"
     local idx="$3"
     
-    # Create dot count file for this process
-    local dot_count_file="/tmp/mcd_dots_$$"
-    echo "0" > "$dot_count_file"
-    
     # Start busy indicator in background
     _mcd_show_tab_busy_indicator &
     local animation_pid=$!
@@ -268,24 +268,12 @@ _mcd_execute_with_animation() {
     result=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
     local exit_code=$?
     
-    # Stop animation and clear any remaining dots
+    # Stop animation and clean up
     kill $animation_pid 2>/dev/null
     wait $animation_pid 2>/dev/null
     
-    # Read the current dot count from the file
-    local current_dots=0
-    if [ -f "$dot_count_file" ]; then
-        current_dots=$(cat "$dot_count_file" 2>/dev/null || echo "0")
-        rm -f "$dot_count_file"
-    fi
-    
-    # Clear only the actual number of dots currently displayed
-    if [ "$current_dots" -gt 0 ]; then
-        # Erase dots one by one: backspace, space, backspace for each dot
-        for ((i=0; i<current_dots; i++)); do
-            printf "\b \b" >&2
-        done
-    fi
+    # Clean up animation using cursor restoration
+    printf "\033[u\033[K" >&2  # Restore cursor position and clear to end of line
     
     # Return the result
     echo "$result"
