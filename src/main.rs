@@ -55,6 +55,89 @@ impl SearchContext {
     }
 }
 
+/// Resolves the search context by handling relative paths and directory navigation patterns.
+/// Returns (search_directory, pattern) where search_directory is the resolved starting point
+/// and pattern is the remaining search term after resolving relative components.
+fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, String) {
+    // Handle empty search term
+    if search_term.is_empty() {
+        return (current_dir.to_path_buf(), String::new());
+    }
+    
+    // Handle pure directory navigation without search pattern
+    if search_term == ".." {
+        if let Some(parent) = current_dir.parent() {
+            return (parent.to_path_buf(), String::new());
+        } else {
+            return (current_dir.to_path_buf(), String::new());
+        }
+    }
+    
+    if search_term == "." {
+        return (current_dir.to_path_buf(), String::new());
+    }
+    
+    // Handle relative paths with patterns like "../foo", "../../bar", etc.
+    if search_term.starts_with("../") || search_term.starts_with("./") {
+        let path = Path::new(search_term);
+        let mut resolved_dir = current_dir.to_path_buf();
+        let mut remaining_pattern = String::new();
+        
+        for component in path.components() {
+            match component {
+                std::path::Component::CurDir => {
+                    // "." - stay in current directory
+                    continue;
+                }
+                std::path::Component::ParentDir => {
+                    // ".." - go to parent directory
+                    if let Some(parent) = resolved_dir.parent() {
+                        resolved_dir = parent.to_path_buf();
+                    }
+                }
+                std::path::Component::Normal(name) => {
+                    // This is the search pattern
+                    remaining_pattern = name.to_string_lossy().to_string();
+                    break;
+                }
+                _ => {
+                    // Handle other components (like root, prefix on Windows)
+                    break;
+                }
+            }
+        }
+        
+        return (resolved_dir, remaining_pattern);
+    }
+    
+    // Handle multiple levels of parent directory navigation like "../../", "../../../"
+    if search_term.chars().all(|c| c == '.' || c == '/') && search_term.contains("..") {
+        let mut resolved_dir = current_dir.to_path_buf();
+        let path = Path::new(search_term);
+        
+        for component in path.components() {
+            match component {
+                std::path::Component::ParentDir => {
+                    if let Some(parent) = resolved_dir.parent() {
+                        resolved_dir = parent.to_path_buf();
+                    }
+                }
+                std::path::Component::CurDir => {
+                    // Stay in current directory
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+        
+        return (resolved_dir, String::new());
+    }
+    
+    // For absolute paths and regular patterns, use the original behavior
+    (current_dir.to_path_buf(), search_term.to_string())
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     
@@ -80,14 +163,17 @@ fn main() {
             process::exit(1);
         }
     };
+
+    // Handle relative paths and standard directory navigation
+    let (search_dir, pattern) = resolve_search_context(&current_dir, search_term);
     
-    // eprintln!("DEBUG: Searching for '{}' from {}", search_term, current_dir.display());
+    // eprintln!("DEBUG: Searching for '{}' from {}", pattern, search_dir.display());
     
     // Use threaded search with busy indicator (unless in quiet mode)
     let matches = if quiet_mode {
-        find_matching_directories(&current_dir, search_term)
+        find_matching_directories(&search_dir, &pattern)
     } else {
-        search_with_progress(&current_dir, search_term)
+        search_with_progress(&search_dir, &pattern)
     };
     
     // eprintln!("DEBUG: Found {} matches", matches.len());
@@ -191,6 +277,17 @@ fn show_busy_indicator(search_complete: &Arc<Mutex<bool>>) {
 
 fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<DirectoryMatch> {
     let mut matches = Vec::new();
+    
+    // Handle empty search term (pure directory navigation like "..", "../../")
+    if search_term.is_empty() {
+        // Return the current directory as the only match
+        matches.push(DirectoryMatch {
+            path: current_dir.to_path_buf(),
+            depth_from_current: 0,
+            match_quality: MatchQuality::ExactDown,
+        });
+        return matches;
+    }
     
     // Handle absolute paths
     if search_term.starts_with('/') {

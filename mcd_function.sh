@@ -10,11 +10,37 @@ mcd() {
     fi
     local search_term="$1"
     local mcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/mcd}"
+    
     # Ensure binary exists
     if [ ! -x "$mcd_binary" ]; then
         echo "Error: MCD binary not found at $mcd_binary"
         return 1
     fi
+    
+    # Handle simple directory navigation cases directly in shell for better performance
+    case "$search_term" in
+        "..")
+            cd .. 2>/dev/null || echo "Cannot navigate to parent directory"
+            return $?
+            ;;
+        "../..")
+            cd ../.. 2>/dev/null || echo "Cannot navigate to ../../"
+            return $?
+            ;;
+        "../../..")
+            cd ../../.. 2>/dev/null || echo "Cannot navigate to ../../../"
+            return $?
+            ;;
+        "../../../..")
+            cd ../../../.. 2>/dev/null || echo "Cannot navigate to ../../../../"
+            return $?
+            ;;
+        ".")
+            # Stay in current directory
+            return 0
+            ;;
+    esac
+    
     # Get the best match (index 0)
     local dest
     dest=$("$mcd_binary" "$search_term" 0)
@@ -163,6 +189,18 @@ _mcd_should_reset_state() {
         done
     fi
     
+    # Handle relative pattern transitions like "../foo" -> "../bar"
+    if [[ "$_MCD_IS_RELATIVE_PATTERN" == true ]] && [[ "$cur" == ../* ]] && [[ "$_MCD_ORIGINAL_PATTERN" == ../* ]]; then
+        # Check if they share the same relative prefix
+        local orig_prefix="${_MCD_ORIGINAL_PATTERN%/*}"
+        local cur_prefix="${cur%/*}"
+        if [[ "$orig_prefix" == "$cur_prefix" ]]; then
+            # Same relative directory level, but different pattern - reset to search new pattern
+            _mcd_debug "  -> RESET: same relative level but different pattern ('$_MCD_ORIGINAL_PATTERN' vs '$cur')"
+            return 0
+        fi
+    fi
+    
     # For absolute patterns, check if current is a logical extension
     if [[ "$_MCD_IS_RELATIVE_PATTERN" == false ]]; then
         # Special case: if user edited "upward" to a parent directory
@@ -290,19 +328,93 @@ _mcd_get_relative_matches() {
     
     _mcd_debug "getting relative matches for pattern '$pattern'"
     
-    while true; do
-        match=$(_mcd_execute_with_animation "$mcd_binary" "$pattern" "$idx")
-        if [ $? -ne 0 ] || [ -z "$match" ]; then
-            break
-        fi
-        _mcd_debug "  relative match #$idx: '$match'"
-        matches+=("$match")
-        idx=$((idx + 1))
-        # Safety limit to prevent infinite loops
-        if [ $idx -gt 100 ]; then
-            break
-        fi
-    done
+    # Handle special cases for directory navigation patterns
+    case "$pattern" in
+        "..")
+            # For "..", complete to parent directory if it exists
+            local parent_dir="$(dirname "$PWD")"
+            if [[ -d "$parent_dir" ]] && [[ "$parent_dir" != "$PWD" ]]; then
+                matches+=("$parent_dir")
+                _mcd_debug "  parent directory match: '$parent_dir'"
+            fi
+            ;;
+        "../.." | "../../.." | "../../../..")
+            # For multiple parent levels, complete to the resolved directory
+            local resolved_dir="$PWD"
+            local path_components="${pattern//[^\/]}"
+            local level_count=$((${#path_components} / 3)) # Each "../" has 3 chars including /
+            
+            for ((i=0; i<level_count; i++)); do
+                resolved_dir="$(dirname "$resolved_dir")"
+                if [[ "$resolved_dir" == "/" ]]; then
+                    break
+                fi
+            done
+            
+            if [[ -d "$resolved_dir" ]]; then
+                matches+=("$resolved_dir")
+                _mcd_debug "  multi-level parent match: '$resolved_dir'"
+            fi
+            ;;
+        ".")
+            # For ".", complete to current directory
+            matches+=("$PWD")
+            _mcd_debug "  current directory match: '$PWD'"
+            ;;
+        *)
+            # Handle relative patterns that contain navigation and search terms
+            if [[ "$pattern" == ../* ]] && [[ "$pattern" != "../.." ]] && [[ "$pattern" != "../../.." ]]; then
+                # Pattern like "../foo" - resolve the relative part and search
+                local resolved_dir="$PWD"
+                local search_pattern="$pattern"
+                
+                # Extract the relative navigation part
+                local nav_part="${pattern%%[^./]*}"  # Gets "../" or "../../" etc.
+                local search_part="${pattern#$nav_part}"  # Gets the search term after navigation
+                
+                _mcd_debug "  split pattern: nav='$nav_part' search='$search_part'"
+                
+                # Navigate to the relative directory
+                local nav_count=$(echo "$nav_part" | grep -o "\\.\\." | wc -l)
+                for ((i=0; i<nav_count; i++)); do
+                    resolved_dir="$(dirname "$resolved_dir")"
+                    if [[ "$resolved_dir" == "/" ]]; then
+                        break
+                    fi
+                done
+                
+                _mcd_debug "  resolved base directory: '$resolved_dir'"
+                
+                if [[ -d "$resolved_dir" ]] && [[ -n "$search_part" ]]; then
+                    # Search for directories matching the pattern in the resolved directory
+                    while IFS= read -r -d $'\0' dir; do
+                        if [[ -d "$dir" ]]; then
+                            local dir_name="$(basename "$dir")"
+                            if [[ "$dir_name" == *"$search_part"* ]]; then
+                                matches+=("$dir")
+                                _mcd_debug "    found relative pattern match: '$dir'"
+                            fi
+                        fi
+                    done < <(find "$resolved_dir" -maxdepth 1 -type d -not -path "$resolved_dir" -print0 2>/dev/null | sort -z)
+                fi
+            else
+                # Use the binary for all other patterns
+                while true; do
+                    match=$(_mcd_execute_with_animation "$mcd_binary" "$pattern" "$idx")
+                    if [ $? -ne 0 ] || [ -z "$match" ]; then
+                        break
+                    fi
+                    _mcd_debug "  relative match #$idx: '$match'"
+                    matches+=("$match")
+                    idx=$((idx + 1))
+                    # Safety limit to prevent infinite loops
+                    if [ $idx -gt 100 ]; then
+                        break
+                    fi
+                done
+            fi
+            ;;
+    esac
     
     _mcd_debug "found ${#matches[@]} relative matches"
     if [ ${#matches[@]} -eq 0 ]; then
@@ -318,6 +430,23 @@ _mcd_get_absolute_matches() {
     local matches=()
     
     _mcd_debug "getting absolute matches for pattern '$pattern'"
+    
+    # Handle relative path patterns that start with ../
+    if [[ "$pattern" == ../* ]]; then
+        _mcd_debug "  pattern starts with ../, using relative match logic"
+        local match_output
+        match_output=$(_mcd_get_relative_matches "$pattern")
+        if [[ -n "$match_output" ]]; then
+            readarray -t matches <<<"$match_output"
+        fi
+        _mcd_debug "found ${#matches[@]} matches via relative logic"
+        if [ ${#matches[@]} -eq 0 ]; then
+            _mcd_debug "returning empty result (no printf output)"
+            return 0
+        fi
+        printf '%s\n' "${matches[@]}"
+        return 0
+    fi
     
     # If the path ends with '/', look for subdirectories
     if [[ "$pattern" == */ ]]; then
@@ -483,6 +612,8 @@ _mcd_tab_complete() {
     # If we don't have matches cached, get them
     if [[ ${#_MCD_CURRENT_MATCHES[@]} -eq 0 ]]; then
         _mcd_debug "no cached matches, getting new ones"
+        
+        # Enhanced pattern detection for relative paths
         if [[ "$cur" == /* ]]; then
             # Absolute pattern
             _mcd_debug "treating '$cur' as absolute pattern"
@@ -497,9 +628,23 @@ _mcd_tab_complete() {
                 _MCD_CURRENT_MATCHES=()
                 _mcd_debug "explicitly set empty array for empty match output"
             fi
-        else
-            # Relative pattern
+        elif [[ "$cur" == ../* ]] || [[ "$cur" == ./* ]] || [[ "$cur" == "." ]] || [[ "$cur" == ".." ]]; then
+            # Relative pattern (including ../, ./, ., ..)
             _mcd_debug "treating '$cur' as relative pattern"
+            _MCD_ORIGINAL_PATTERN="$cur"
+            _MCD_IS_RELATIVE_PATTERN=true
+            local match_output
+            match_output=$(_mcd_get_relative_matches "$cur")
+            _mcd_debug "raw match output: '$match_output'"
+            if [[ -n "$match_output" ]]; then
+                readarray -t _MCD_CURRENT_MATCHES <<<"$match_output"
+            else
+                _MCD_CURRENT_MATCHES=()
+                _mcd_debug "explicitly set empty array for empty match output"
+            fi
+        else
+            # Regular relative pattern (no explicit path prefix)
+            _mcd_debug "treating '$cur' as regular relative pattern"
             _MCD_ORIGINAL_PATTERN="$cur"
             _MCD_IS_RELATIVE_PATTERN=true
             local match_output

@@ -103,6 +103,35 @@ The MCD tool uses a sophisticated search and sorting algorithm with support for 
 - **Simple Substring**: `mcd foo` - finds directories containing "foo"
 - **Absolute Paths**: `mcd /path/to/dir` - navigates directly to absolute paths
 - **Path Patterns**: `mcd parent/child` - finds "child" within "parent" directories
+- **Relative Navigation**: `mcd ..` - navigates to parent directory
+- **Multi-level Navigation**: `mcd ../..` - navigates up multiple directory levels
+- **Relative Patterns**: `mcd ../foo` - searches for "foo" starting from parent directory
+- **Complex Relative**: `mcd ../../bar` - searches for "bar" starting from grandparent directory
+
+## Examples
+
+### Basic Navigation
+```bash
+mcd foo           # Find directories containing "foo"
+mcd /tmp          # Navigate to /tmp directly
+mcd ..            # Go to parent directory  
+mcd ../..         # Go up two directory levels
+mcd ../../..      # Go up three directory levels
+```
+
+### Relative Path Search
+```bash
+mcd ../foo        # Search for "foo" in parent directory
+mcd ../project    # Find "project" directory in parent
+mcd ../../config  # Find "config" starting from grandparent
+mcd ./local       # Search in current directory
+```
+
+### Tab Completion with Relative Paths
+- `mcd ../<TAB>` - Shows all directories in parent directory
+- `mcd ../f<TAB>` - Cycles through directories starting with "f" in parent
+- `mcd ../../<TAB>` - Shows all directories two levels up
+- `mcd ../foo/<TAB>` - Explores subdirectories of "../foo"
 
 ### Search Strategy
 - **Upward Search**: Traverses parent directories to find matches
