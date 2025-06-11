@@ -7,9 +7,11 @@
 - **Substring Matching**: Find directories by partial name matches
 - **Bidirectional Search**: Searches both up the directory tree and down into subdirectories  
 - **Smart Prioritization**: Proximity-based sorting with intelligent exact vs substring match handling
-- **Multiple Match Display**: Shows all matching options when multiple directories are found
+- **Relative Path Navigation**: Support for `..`, `../..`, `../pattern`, etc.
 - **Shell Integration**: Works seamlessly with bash through a wrapper function
-- **Tab Completion**: Standard directory tab completion support
+- **Advanced Tab Completion**: Intelligent cycling through all matches with visual feedback
+- **Performance Optimized**: Fast shell-based navigation for common patterns
+- **Visual Feedback**: Animated loading indicators during search operations
 
 ## Installation
 
@@ -40,10 +42,14 @@
 mcd <substring>        # Navigate to directory matching substring
 mcd <absolute_path>    # Navigate to absolute path
 mcd <path/pattern>     # Navigate using path-like patterns
+mcd ..                 # Navigate to parent directory
+mcd ../..              # Navigate up multiple levels
+mcd ../pattern         # Search for pattern starting from parent directory
 ```
 
 ### Examples
 
+#### Basic Navigation
 ```bash
 # Navigate to any directory containing "proj"
 mcd proj
@@ -61,13 +67,29 @@ mcd /home/user/projects
 mcd projects/src    # Find 'src' within 'projects'
 ```
 
-### Multiple Matches & Tab Completion
+#### Relative Path Navigation
+```bash
+# Standard directory navigation
+mcd ..            # Go to parent directory  
+mcd ../..         # Go up two directory levels
+mcd ../../..      # Go up three directory levels
+mcd .             # Stay in current directory (no-op)
 
-When multiple directories match your search term, `mcd` automatically navigates to the best match (highest priority). However, you can use **tab completion** to cycle through all available matches before executing the command:
+# Relative search patterns
+mcd ../foo        # Search for "foo" in parent directory
+mcd ../project    # Find "project" directory in parent
+mcd ../../config  # Find "config" starting from grandparent
+mcd ./local       # Search in current directory
+```
+
+### Advanced Tab Completion
+
+When multiple directories match your search term, `mcd` provides intelligent tab completion that cycles through all available matches with visual feedback:
 
 ```bash
-# Type 'mcd fo' and press Tab - cycles through matches
+# Type 'mcd fo' and press Tab - shows animated dots while searching
 $ mcd fo<Tab>
+...  # Animated loading indicator
 mcd /.font-unix
 
 # Press Tab again to cycle to next match
@@ -83,17 +105,29 @@ $ mcd /foo<Enter>
 # Now in /foo directory
 ```
 
-The tab completion works by:
-1. Finding all directories that match your search pattern
-2. Cycling through them in priority order (exact matches first, then partial matches)
-3. Allowing you to press Enter when you see the directory you want
+#### Tab Completion Features
 
-### Tab Completion Features
-
+- **Animated Loading**: Visual dots animation during search operations
 - **Inline Cycling**: Tab repeatedly to cycle through all matches
 - **Smart Prioritization**: Exact matches shown before partial matches
 - **Proximity Sorting**: Closer directories (fewer levels away) shown first
 - **Trailing Slash Support**: Add `/` to explore subdirectories of the current match
+- **Relative Path Support**: Full tab completion for `../`, `../../`, etc.
+
+#### Tab Completion with Relative Paths
+```bash
+# Explore parent directory contents
+mcd ../<TAB>          # Shows: child1/ child2/ subdir/
+
+# Cycle through matching patterns in parent
+mcd ../f<TAB>         # Cycles: ../foo → ../fbar → ../folder
+
+# Multi-level navigation
+mcd ../../<TAB>       # Shows all directories two levels up
+
+# Explore subdirectories of relative matches
+mcd ../foo/<TAB>      # Shows subdirectories of ../foo/
+```
 
 ## Search Algorithm
 
@@ -154,6 +188,14 @@ mcd ./local       # Search in current directory
 From directory `/tmp`:
 - `mcd fo` → First offers `/.font-unix`, then `/foo`, then other matches containing "fo"
 - Tab completion cycles through: `/.font-unix` → `/foo` → `/some/folder` → etc.
+- `mcd ../` → Shows animated loading, then displays parent directory contents
+- `mcd ../project<TAB>` → Cycles through projects in parent directory
+
+### Performance Optimizations
+- **Shell-based Navigation**: Common patterns like `..`, `../..` handled directly in shell
+- **Animated Feedback**: Visual loading indicators only appear for longer operations
+- **Intelligent Caching**: Tab completion results cached to avoid repeated searches
+- **Fast Relative Resolution**: Relative paths resolved before expensive directory searches
 
 ## How It Works
 
@@ -167,31 +209,46 @@ The `mcd` tool works in two parts:
 
 2. **Shell Function (`mcd_function.sh`)**:
    - Wraps the Rust binary and handles directory changing
-   - Provides intelligent tab completion that cycles through all matches
+   - Provides intelligent tab completion with animated visual feedback
    - Manages completion state to enable smooth cycling experience
+   - Handles fast shell-based navigation for common relative patterns
    - Changes to the selected directory using the shell's `cd` command
+   - Shows animated loading indicators during search operations
 
 ### Search Process
 
-1. **Search Up**: Looks through parent directories for matches
-2. **Search Down**: Recursively searches subdirectories (up to 8 levels deep for performance)
-3. **Comprehensive Collection**: Gathers **all** matching directories (not just the first one)
-4. **Smart Sorting**: 
+1. **Relative Path Resolution**: Handles `..`, `../..`, `../pattern` etc. before search
+2. **Search Up**: Looks through parent directories for matches
+3. **Search Down**: Recursively searches subdirectories (up to 8 levels deep for performance)
+4. **Comprehensive Collection**: Gathers **all** matching directories (not just the first one)
+5. **Smart Sorting**: 
    - Prioritizes match quality (exact vs partial)
    - Sorts by proximity within each quality category
    - Maintains consistent ordering for reliable tab completion
-5. **Shell Integration**: Uses a bash wrapper function with sophisticated tab completion cycling
+6. **Shell Integration**: Uses a bash wrapper function with sophisticated tab completion cycling
+7. **Visual Feedback**: Provides animated loading indicators for longer operations
 
 ## Technical Details
 
 - **Language**: Rust (for performance and reliability)
 - **Dependencies**: Standard library only (no external crates)
-- **Architecture**: Rust binary + bash wrapper function
+- **Architecture**: Rust binary + enhanced bash wrapper function
 - **Search Depth**: Limited to 8 levels deep for performance
-- **Shell Support**: Bash (with advanced tab completion cycling)
-- **Recent Improvements**: Enhanced to return all matching directories for proper tab completion cycling
+- **Shell Support**: Bash (with advanced tab completion cycling and animations)
+- **Visual Feedback**: Animated loading indicators using ANSI escape sequences
+- **Performance**: Shell-based fast paths for common navigation patterns
+- **Relative Path Support**: Full resolution and search from resolved directories
 
 ## Recent Updates
+
+### v1.1.0 - Relative Path Navigation & Enhanced UX
+- **NEW**: Full relative path support (`..`, `../..`, `../pattern`, etc.)
+- **NEW**: Animated loading indicators during tab completion
+- **NEW**: Fast shell-based navigation for common patterns
+- **NEW**: Enhanced tab completion with relative path support
+- **IMPROVED**: Performance optimizations for common navigation patterns
+- **IMPROVED**: Visual feedback system with animated dots during searches
+- **IMPROVED**: State management for seamless tab completion cycling
 
 ### v1.0.1 - Tab Completion Cycling Fix
 - **Fixed**: Tab completion now properly cycles through all matching directories
@@ -219,14 +276,15 @@ cargo test
 ```
 mcd/
 ├── src/
-│   └── main.rs                  # Core Rust implementation
+│   └── main.rs                  # Core Rust implementation with relative path support
 ├── .github/
 │   └── copilot-instructions.md  # Copilot custom instructions  
 ├── .vscode/
 │   └── tasks.json               # VS Code build tasks
-├── mcd_function.sh              # Bash wrapper function (ESSENTIAL)
-├── comprehensive_test.sh        # Complete test suite
-├── demo.sh                      # Demonstration script
+├── mcd_function.sh              # Enhanced bash wrapper with animations (ESSENTIAL)
+├── test_relative_comprehensive.sh  # Comprehensive relative path tests
+├── simple_test.sh               # Basic functionality tests
+├── RELATIVE_PATH_ENHANCEMENT.md # Detailed enhancement documentation
 ├── Cargo.toml                   # Rust dependencies and metadata
 ├── Cargo.lock                   # Dependency lock file
 └── README.md                    # This file
@@ -234,27 +292,38 @@ mcd/
 
 ### Testing
 
-You can test the installation using the included demo script:
+The project includes a comprehensive test suite located in the `tests/` directory:
 
 ```bash
-cd mcd
-./demo.sh
+# Run comprehensive test suite (recommended)
+./tests/test_relative_comprehensive.sh
+
+# Quick validation for CI/CD
+./tests/validate_mcd.sh
+
+# Simple functionality test
+./tests/simple_test.sh
 ```
 
-Or test the binary directly:
-
+### Manual Testing
+You can also test manually:
 ```bash
-# Test finding directories containing 'fo' - should return first match
-./target/release/mcd fo 0
+# Build the project
+cargo build --release
 
-# Test cycling through matches - should return second match  
-./target/release/mcd fo 1
-
-# Test from different directory
+# Test basic navigation
 cd /tmp
-/path/to/mcd/target/release/mcd fo 0  # Returns /.font-unix
-/path/to/mcd/target/release/mcd fo 1  # Returns /foo
+mcd ..
+
+# Test relative paths
+mcd ../Documents
+mcd ../../usr/local
+
+# Test pattern matching
+mcd ../proj   # Should match project directories in parent
 ```
+
+See `tests/README.md` for detailed information about the test suite.
 
 ## Contributing
 
@@ -290,11 +359,19 @@ The tool searches with case-insensitive substring matching. Try:
 - Verifying you're in the right starting location
 - Testing with debug mode: `MCD_DEBUG=1 mcd <pattern>`
 
-### Tab Completion Shows Wrong Results
-If tab completion shows unexpected directories:
-- Remember that search includes both parent and child directories
-- Use more specific patterns to narrow results
-- Check current working directory as it affects search scope
+### Tab Completion Shows Slow Performance
+If tab completion feels slow or shows animation for too long:
+- The search depth is limited to 8 levels for performance
+- Very large directory trees may take longer to search
+- Consider using more specific patterns to narrow the search scope
+- Animation appears only for operations taking longer than 500ms
+
+### Relative Path Navigation Issues
+If relative path navigation doesn't work as expected:
+- Ensure you're using the shell function, not calling the binary directly
+- Test: `mcd ".."` should change to parent directory
+- Verify the shell function is properly loaded: `type mcd` should show it's a function
+- Check for shell compatibility (requires bash)
 
 ### Binary Not Found Error
 Ensure the binary exists and has execute permissions:
@@ -309,3 +386,4 @@ Test the binary directly first:
 /path/to/mcd/target/release/mcd <search_term> 0
 ```
 If this works but the function doesn't, check your shell configuration.
+```
