@@ -77,7 +77,176 @@ _mcd_reset_state() {
     _MCD_LEAF_COMPLETION_COUNT=0
 }
 
-# (… all of your unchanged state-reset & state-detect functions here …)
+# Determine if the current input represents a fresh search vs continuation of cycling
+_mcd_should_reset_state() {
+    local cur="$1"
+    
+    _mcd_debug "should_reset_state: cur='$cur'"
+    _mcd_debug "  current state: pattern='$_MCD_ORIGINAL_PATTERN' mode='$_MCD_COMPLETION_MODE' is_rel=$_MCD_IS_RELATIVE_PATTERN"
+    _mcd_debug "  current matches: ${#_MCD_CURRENT_MATCHES[@]} items: [${_MCD_CURRENT_MATCHES[*]}]"
+    
+    # Always reset if no state stored
+    if [[ -z "$_MCD_ORIGINAL_PATTERN" ]] || [[ -z "$_MCD_COMPLETION_MODE" ]]; then
+        _mcd_debug "  -> RESET: no state stored"
+        return 0
+    fi
+    
+    # Special case: if we're in leaf mode and current input is the leaf directory with trailing slash,
+    # continue (don't reset) - we'll handle this in the completion function
+    if [[ "$_MCD_COMPLETION_MODE" == "leaf" ]] && [[ "$cur" == "$_MCD_ORIGINAL_PATTERN/" ]]; then
+        _mcd_debug "  -> CONTINUE: leaf mode, current input is leaf directory with trailing slash"
+        return 1
+    fi
+    
+    # Special case: if we're in leaf mode and current input is the leaf directory with trailing slash,
+    # continue (don't reset) - we'll handle this in the completion function
+    if [[ "$_MCD_COMPLETION_MODE" == "leaf" ]] && [[ "$cur" == "$_MCD_ORIGINAL_PATTERN/" ]]; then
+        _mcd_debug "  -> CONTINUE: leaf mode, current input is leaf directory with trailing slash"
+        return 1
+    fi
+    
+    # Special case: if we're already in leaf mode and the user keeps trying to add slashes,
+    # recognize repeated attempts and don't reset
+    if [[ "$_MCD_COMPLETION_MODE" == "leaf" ]] && [[ "$cur" == */ ]]; then
+        local cur_without_slash="${cur%/}"
+        if [[ "$cur_without_slash" == "$_MCD_ORIGINAL_PATTERN" ]]; then
+            _mcd_debug "  -> CONTINUE: leaf mode, user keeps trying to explore leaf directory with slash"
+            return 1
+        fi
+    fi
+    
+    # Check for user adding trailing slash to explore subdirectories
+    if [[ "$cur" == */ ]]; then
+        local cur_without_slash="${cur%/}"
+        for match in "${_MCD_CURRENT_MATCHES[@]}"; do
+            if [[ "$match" == "$cur_without_slash" ]]; then
+                _mcd_debug "  -> RESET: user added trailing slash to explore subdirectories of '$cur_without_slash'"
+                _mcd_debug "  -> This was match from cycling, now switching to subdirectory exploration mode"
+                return 0
+            fi
+        done
+        
+        # Check if current input matches auto-completed single subdir with trailing slash
+        if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ ${#_MCD_CURRENT_MATCHES[@]} -eq 1 ]]; then
+            local expected_completion="${_MCD_CURRENT_MATCHES[0]}/"
+            if [[ "$cur" == "$expected_completion" ]]; then
+                _mcd_debug "  -> RESET: current input matches auto-completed single subdir with trailing slash"
+                return 0
+            fi
+        fi
+    fi
+    
+    # Check if current input is one of our cached matches - if so, continue cycling
+    for i in "${!_MCD_CURRENT_MATCHES[@]}"; do
+        local match="${_MCD_CURRENT_MATCHES[i]}"
+        if [[ "$match" == "$cur" ]]; then
+            # Special case: if we're in leaf mode and this is the leaf directory,
+            # but the completion mode is not "leaf", this is a fresh command - reset
+            if [[ "$_MCD_IS_LEAF_DIR" == true ]] && [[ "$_MCD_COMPLETION_MODE" != "leaf" ]]; then
+                _mcd_debug "  -> RESET: fresh command on leaf directory (mode was '$_MCD_COMPLETION_MODE', not 'leaf')"
+                return 0
+            fi
+            _mcd_debug "  -> CONTINUE: current input exactly matches cached result #$i: '$match'"
+            return 1
+        fi
+        # Allow trailing slash differences if both original pattern and current have trailing slashes
+        if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ "$cur" == */ ]] && [[ "${match%/}" == "${cur%/}" ]]; then
+            _mcd_debug "  -> CONTINUE: current input matches cached result #$i (subdirectory expansion mode): '$match'"
+            return 1
+        fi
+    done
+    
+    # Special case: if original pattern ended with / and current input also ends with /
+    if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ "$cur" == */ ]]; then
+        local orig_path="${_MCD_ORIGINAL_PATTERN%/}"
+        local cur_path="${cur%/}"
+        _mcd_debug "  both have trailing slash: orig='$orig_path' cur='$cur_path'"
+        if [[ "$cur_path" == "$orig_path"/* ]] && [[ "$cur_path" != "$orig_path" ]]; then
+            _mcd_debug "  -> RESET: moved into subdirectory (user typed, not completion result)"
+            return 0
+        fi
+        if [[ "$cur_path" == "$orig_path" ]]; then
+            _mcd_debug "  -> CONTINUE: same directory with trailing slash"
+            return 1
+        fi
+    fi
+    
+    # For relative patterns that resulted in absolute paths
+    if [[ "$_MCD_IS_RELATIVE_PATTERN" == true ]] && [[ "$cur" == /* ]]; then
+        _mcd_debug "  checking if absolute path '$cur' matches relative pattern '$_MCD_ORIGINAL_PATTERN'"
+        for ((idx=0; idx<${#_MCD_CURRENT_MATCHES[@]}; idx++)); do
+            if [[ "${_MCD_CURRENT_MATCHES[idx]}" == "$cur" ]]; then
+                _mcd_debug "  -> CONTINUE: absolute path matches relative pattern result #$idx"
+                return 1
+            fi
+        done
+    fi
+    
+    # Handle relative pattern transitions like "../foo" -> "../bar"
+    if [[ "$_MCD_IS_RELATIVE_PATTERN" == true ]] && [[ "$cur" == ../* ]] && [[ "$_MCD_ORIGINAL_PATTERN" == ../* ]]; then
+        # Check if they share the same relative prefix
+        local orig_prefix="${_MCD_ORIGINAL_PATTERN%/*}"
+        local cur_prefix="${cur%/*}"
+        if [[ "$orig_prefix" == "$cur_prefix" ]]; then
+            # Same relative directory level, but different pattern - reset to search new pattern
+            _mcd_debug "  -> RESET: same relative level but different pattern ('$_MCD_ORIGINAL_PATTERN' vs '$cur')"
+            return 0
+        fi
+    fi
+    
+    # For absolute patterns, check if current is a logical extension
+    if [[ "$_MCD_IS_RELATIVE_PATTERN" == false ]]; then
+        # Special case: if user edited "upward" to a parent directory
+        # e.g., was cycling in /tmp/foo/, now edited to /tmp/foo (without slash)
+        if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ "$cur" != */ ]]; then
+            local orig_dir="${_MCD_ORIGINAL_PATTERN%/}"
+            if [[ "$cur" == "$orig_dir" ]]; then
+                _mcd_debug "  -> RESET: user edited upward to parent directory '$cur' from subdirectory exploration"
+                return 0
+            fi
+        fi
+        
+        # If user edited to a much shorter path (ancestor directory), reset
+        # e.g., was cycling in /tmp/foo/foo1/foo2, now edited to /tmp
+        if [[ "$_MCD_ORIGINAL_PATTERN" == "$cur"/* ]] && [[ "$cur" != "$_MCD_ORIGINAL_PATTERN" ]]; then
+            # Count path components to see if significantly shorter
+            local orig_components=$(echo "$_MCD_ORIGINAL_PATTERN" | tr '/' '\n' | wc -l)
+            local cur_components=$(echo "$cur" | tr '/' '\n' | wc -l)
+            if [[ $((orig_components - cur_components)) -gt 1 ]]; then
+                _mcd_debug "  -> RESET: user edited to much shorter ancestor path (orig: $orig_components components, cur: $cur_components components)"
+                return 0
+            fi
+        fi
+        
+        # If current input is more specific than original pattern but doesn't match any cached results,
+        # user has manually edited to narrow the search - reset
+        if [[ "$cur" == "$_MCD_ORIGINAL_PATTERN"* ]] && [[ "$cur" != "$_MCD_ORIGINAL_PATTERN" ]]; then
+            # Check if current input matches any cached result
+            local matches_cached=false
+            for match in "${_MCD_CURRENT_MATCHES[@]}"; do
+                if [[ "$match" == "$cur" ]] || [[ "${match%/}" == "${cur%/}" ]]; then
+                    matches_cached=true
+                    break
+                fi
+            done
+            if [[ "$matches_cached" == false ]]; then
+                _mcd_debug "  -> RESET: current input is more specific than original but doesn't match cached results"
+                return 0
+            fi
+        fi
+        
+        # Only continue if paths are closely related (not ancestor/descendant relationship)
+        if [[ "$cur" == "$_MCD_ORIGINAL_PATTERN"* ]]; then
+            _mcd_debug "  -> CONTINUE: current is extension of original pattern"
+            return 1
+        fi
+    fi
+    
+    # In all other cases, reset
+    _mcd_debug "  -> RESET: no matching conditions"
+    return 0
+}
+
 
 # Show busy indicator with dots animation for tab completion
 _mcd_show_tab_busy_indicator() {
