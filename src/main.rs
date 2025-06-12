@@ -437,8 +437,9 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
         }
     }
     
-    // If there's exactly one match in immediate subdirectories, return early
-    if immediate_matches.len() == 1 {
+    // If there are any matches in immediate subdirectories, return early to avoid deep search
+    // This prioritizes local matches over distant ones
+    if immediate_matches.len() > 0 {
         return finalize_matches(all_matches);
     }
     
