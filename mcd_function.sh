@@ -127,7 +127,7 @@ _mcd_should_reset_state() {
         done
         
         # Check if current input matches auto-completed single subdir with trailing slash
-        if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ ${#_MCD_CURRENT_MATCHES[@]} -eq 1 ]]; then
+        if [[ ${#_MCD_CURRENT_MATCHES[@]} -eq 1 ]]; then
             local expected_completion="${_MCD_CURRENT_MATCHES[0]}/"
             if [[ "$cur" == "$expected_completion" ]]; then
                 _mcd_debug "  -> RESET: current input matches auto-completed single subdir with trailing slash"
@@ -641,6 +641,22 @@ _mcd_tab_complete() {
             _mcd_debug "already at leaf directory, not adding slash to prevent loop: '$completion'"
             COMPREPLY=("$completion")
             return 0
+        fi
+        
+        # Special case: if original pattern ended with '/' and the single match is the same directory,
+        # this means no subdirectories were found - treat as leaf directory
+        if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]]; then
+            local dir_without_slash="${_MCD_ORIGINAL_PATTERN%/}"
+            local completion_without_slash="${completion%/}"
+            if [[ "$completion_without_slash" == "$dir_without_slash" ]] || [[ "$completion" == "$_MCD_ORIGINAL_PATTERN" ]]; then
+                _mcd_debug "original pattern ended with '/', single match is same directory - treating as leaf"
+                _mcd_debug "  original: '$_MCD_ORIGINAL_PATTERN', completion: '$completion'"
+                _MCD_IS_LEAF_DIR=true
+                _MCD_COMPLETION_MODE="leaf"
+                # Don't add slash, complete to directory without slash
+                COMPREPLY=("$completion_without_slash")
+                return 0
+            fi
         fi
         
         # If the single match is a directory, add trailing slash for easy Enter/Tab choice

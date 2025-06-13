@@ -294,7 +294,14 @@ fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<Direc
     if search_term.starts_with('/') {
         let path = Path::new(search_term);
         
-        if path.exists() && path.is_dir() {
+        if search_term.ends_with('/') {
+            // Path ends with slash - user wants to explore subdirectories
+            let dir_path = Path::new(&search_term[..search_term.len()-1]); // Remove trailing slash
+            if dir_path.exists() && dir_path.is_dir() {
+                // Search for subdirectories in this directory
+                search_absolute_pattern(dir_path, "", &mut matches);
+            }
+        } else if path.exists() && path.is_dir() {
             // Path exists exactly - return it directly without searching subdirectories
             matches.push(DirectoryMatch {
                 path: path.to_path_buf(),
