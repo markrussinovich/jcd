@@ -18,6 +18,7 @@ enum MatchQuality {
     ExactUp,     // Exact match up the path - highest priority
     PartialUp,   // Partial match up the path - second priority
     ExactDown,   // Exact match down the path - third priority
+    PrefixDown,  // Prefix match down the path - fourth priority
     PartialDown, // Partial match down the path - lowest priority
 }
 
@@ -308,9 +309,9 @@ fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<Direc
             // Path doesn't exist - find the longest existing prefix and search from there
             let (search_root, search_pattern) = find_search_root_and_pattern(search_term);
             if let Some(root) = search_root {
-                let mut context = SearchContext::new();
-                // For absolute paths, do a breadth-first search to prioritize shallower matches
-                search_breadth_first(&root, &search_pattern, &mut matches, &mut context, 3);
+                // For absolute paths, we want to match directories in the parent directory
+                // that start with or contain the search pattern, similar to relative path behavior
+                search_absolute_pattern(&root, &search_pattern, &mut matches);
             }
         }
         return finalize_matches(matches);
@@ -524,7 +525,7 @@ fn finalize_matches(mut matches: Vec<DirectoryMatch>) -> Vec<DirectoryMatch> {
                 // For up matches, sort by depth descending (closer to current = higher depth)
                 b.depth_from_current.cmp(&a.depth_from_current)
             }
-            MatchQuality::ExactDown | MatchQuality::PartialDown => {
+            MatchQuality::ExactDown | MatchQuality::PrefixDown | MatchQuality::PartialDown => {
                 // For down matches, sort by depth ascending (shallower = lower depth)
                 a.depth_from_current.cmp(&b.depth_from_current)
             }
@@ -735,6 +736,123 @@ fn search_pattern_recursive_fast(
     }
 }
 
+fn search_absolute_pattern(parent_dir: &Path, pattern: &str, matches: &mut Vec<DirectoryMatch>) {
+    use std::collections::VecDeque;
+    
+    let mut queue = VecDeque::new();
+    let mut immediate_matches = Vec::new();
+    queue.push_back((parent_dir.to_path_buf(), 0));
+    let search_lower = pattern.to_lowercase();
+    let max_depth = 8;
+    
+    // First, search immediate subdirectories (depth 1) to check for early stopping
+    if let Ok(entries) = fs::read_dir(parent_dir) {
+        let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+        entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+        
+        for entry in &entries {
+            if let Ok(metadata) = entry.metadata() {
+                if metadata.is_dir() {
+                    let path = entry.path();
+                    if let Some(name) = path.file_name() {
+                        let name_str = name.to_string_lossy();
+                        let name_lower = name_str.to_lowercase();
+                        
+                        // Check for immediate matches
+                        if name_lower == search_lower {
+                            // Exact match
+                            let dir_match = DirectoryMatch {
+                                path: path.clone(),
+                                depth_from_current: 1,
+                                match_quality: MatchQuality::ExactDown,
+                            };
+                            immediate_matches.push(dir_match.clone());
+                            matches.push(dir_match);
+                        } else if name_lower.starts_with(&search_lower) {
+                            // Prefix match
+                            let dir_match = DirectoryMatch {
+                                path: path.clone(),
+                                depth_from_current: 1,
+                                match_quality: MatchQuality::PrefixDown,
+                            };
+                            immediate_matches.push(dir_match.clone());
+                            matches.push(dir_match);
+                        } else if name_lower.contains(&search_lower) {
+                            // Contains match
+                            let dir_match = DirectoryMatch {
+                                path: path.clone(),
+                                depth_from_current: 1,
+                                match_quality: MatchQuality::PartialDown,
+                            };
+                            immediate_matches.push(dir_match.clone());
+                            matches.push(dir_match);
+                        }
+                        
+                        // Add subdirectories to queue for potential deeper search
+                        queue.push_back((path.clone(), 1));
+                    }
+                }
+            }
+        }
+    }
+    
+    // If there are any matches in immediate subdirectories, return early to avoid deep search
+    // This prioritizes local matches over distant ones (same logic as relative paths)
+    if immediate_matches.len() > 0 {
+        return;
+    }
+    
+    // Otherwise, continue with breadth-first search for deeper levels
+    while let Some((current_dir, depth)) = queue.pop_front() {
+        if depth == 0 || depth > max_depth {
+            continue; // Skip depth 0 (already processed) and beyond max depth
+        }
+        
+        if let Ok(entries) = fs::read_dir(&current_dir) {
+            let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+            entries.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+            
+            for entry in &entries {
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.is_dir() {
+                        let path = entry.path();
+                        if let Some(name) = path.file_name() {
+                            let name_str = name.to_string_lossy();
+                            let name_lower = name_str.to_lowercase();
+                            
+                            // Check for pattern match at deeper levels
+                            if name_lower == search_lower {
+                                matches.push(DirectoryMatch {
+                                    path: path.clone(),
+                                    depth_from_current: depth as i32,
+                                    match_quality: MatchQuality::ExactDown,
+                                });
+                            } else if name_lower.starts_with(&search_lower) {
+                                matches.push(DirectoryMatch {
+                                    path: path.clone(),
+                                    depth_from_current: depth as i32,
+                                    match_quality: MatchQuality::PrefixDown,
+                                });
+                            } else if name_lower.contains(&search_lower) {
+                                matches.push(DirectoryMatch {
+                                    path: path.clone(),
+                                    depth_from_current: depth as i32,
+                                    match_quality: MatchQuality::PartialDown,
+                                });
+                            }
+                            
+                            // Add subdirectories to queue for next level search
+                            if depth < max_depth {
+                                queue.push_back((path, depth + 1));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn find_search_root_and_pattern(search_term: &str) -> (Option<PathBuf>, String) {
     let path = Path::new(search_term);
     let mut current = path;
@@ -764,94 +882,4 @@ fn find_search_root_and_pattern(search_term: &str) -> (Option<PathBuf>, String) 
     (Some(PathBuf::from("/")), first_component)
 }
 
-fn search_breadth_first(
-    root_dir: &Path,
-    search_term: &str,
-    matches: &mut Vec<DirectoryMatch>,
-    context: &mut SearchContext,
-    max_depth: usize,
-) {
-    use std::collections::VecDeque;
-    
-    let mut queue = VecDeque::new();
-    queue.push_back((root_dir.to_path_buf(), 0));
-    
-    while let Some((current_dir, depth)) = queue.pop_front() {
-        if depth > max_depth || !context.should_continue() {
-            continue;
-        }
-        
-        if let Ok(entries) = fs::read_dir(&current_dir) {
-            let mut level_matches = Vec::new();
-            let mut subdirs = Vec::new();
-            
-            for entry in entries.flatten() {
-                if !context.should_continue() {
-                    break;
-                }
-                
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_dir() {
-                        let path = entry.path();
-                        if let Some(name) = path.file_name() {
-                            let name_str = name.to_string_lossy();
-                            let name_lower = name_str.to_lowercase();
-                            let search_lower = search_term.to_lowercase();
-                            
-                            // Check for match
-                            let is_match = search_term.is_empty() || 
-                                         name_lower == search_lower ||
-                                         name_lower.starts_with(&search_lower) ||
-                                         name_lower.contains(&search_lower);
-                            
-                            if is_match {
-                                let quality_score = if name_lower == search_lower {
-                                    0 // Exact match
-                                } else if name_lower.starts_with(&search_lower) {
-                                    1 // Prefix match
-                                } else {
-                                    2 // Substring match
-                                };
-                                
-                                let match_quality = if quality_score == 0 {
-                                    MatchQuality::ExactDown
-                                } else {
-                                    MatchQuality::PartialDown
-                                };
-                                
-                                level_matches.push((quality_score, DirectoryMatch {
-                                    path: path.clone(),
-                                    depth_from_current: depth as i32,
-                                    match_quality,
-                                }));
-                            }
-                            
-                            // Add to queue for next level search
-                            if depth < max_depth {
-                                subdirs.push(path);
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Sort and add matches from this level
-            level_matches.sort_by_key(|(score, _)| *score);
-            for (_, match_entry) in level_matches {
-                if !context.should_continue() {
-                    break;
-                }
-                matches.push(match_entry);
-                context.add_match();
-            }
-            
-            // Add subdirectories to queue for next level
-            for subdir in subdirs {
-                if context.should_continue() {
-                    queue.push_back((subdir, depth + 1));
-                }
-            }
-        }
-    }
-}
 

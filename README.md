@@ -170,6 +170,7 @@ mcd ./local       # Search in current directory
 ### Search Strategy
 - **Upward Search**: Traverses parent directories to find matches
 - **Downward Search**: Recursively searches subdirectories up to 8 levels deep
+- **Smart Early Return**: Prioritizes immediate subdirectory matches over deeper searches for faster performance
 - **Pattern Matching**: For path patterns, searches for each component sequentially
 - **Comprehensive Match Collection**: Returns all matching directories for tab completion cycling
 - **Deduplication**: Removes duplicate paths that might be found through different search paths
@@ -193,9 +194,11 @@ From directory `/tmp`:
 
 ### Performance Optimizations
 - **Shell-based Navigation**: Common patterns like `..`, `../..` handled directly in shell
+- **Smart Search Prioritization**: Immediate subdirectory matches returned early to avoid deep searches
 - **Animated Feedback**: Visual loading indicators only appear for longer operations
 - **Intelligent Caching**: Tab completion results cached to avoid repeated searches
 - **Fast Relative Resolution**: Relative paths resolved before expensive directory searches
+- **Optimized State Management**: Improved cycling detection and fresh search handling
 
 ## How It Works
 
@@ -240,6 +243,12 @@ The `mcd` tool works in two parts:
 - **Relative Path Support**: Full resolution and search from resolved directories
 
 ## Recent Updates
+
+### v1.1.1 - Search Optimization & State Management
+- **OPTIMIZED**: Search algorithm now prioritizes immediate subdirectory matches over deeper searches
+- **IMPROVED**: Enhanced state management for cycling and fresh search detection
+- **IMPROVED**: Simplified state management and better busy indicator logic for tab completion
+- **ENHANCED**: Comprehensive test suite with validation scripts
 
 ### v1.1.0 - Relative Path Navigation & Enhanced UX
 - **NEW**: Full relative path support (`..`, `../..`, `../pattern`, etc.)
@@ -295,7 +304,11 @@ mcd/
 The project includes a comprehensive test suite located in the `tests/` directory:
 
 ```bash
-# Run comprehensive test suite (recommended)
+# Run all tests (recommended)
+./tests/run_all_tests.sh
+
+# Individual test suites:
+# Run comprehensive test suite
 ./tests/test_relative_comprehensive.sh
 
 # Quick validation for CI/CD
@@ -303,6 +316,18 @@ The project includes a comprehensive test suite located in the `tests/` director
 
 # Simple functionality test
 ./tests/simple_test.sh
+
+# Quick regression test
+./tests/quick_regression_test.sh
+
+# Specific bug fix tests
+./tests/test_absolute_bug.sh
+./tests/test_absolute_path_consistency.sh
+./tests/test_regression_fix.sh
+./tests/final_absolute_path_test.sh
+
+# Python-based basic functionality verification
+./tests/verify_basic_functionality.py
 ```
 
 ### Manual Testing

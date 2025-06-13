@@ -400,6 +400,7 @@ _mcd_get_relative_matches() {
 # Get all matches for an absolute pattern
 _mcd_get_absolute_matches() {
     local pattern="$1"
+    local mcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/mcd}"
     local matches=()
     
     _mcd_debug "getting absolute matches for pattern '$pattern'"
@@ -421,61 +422,28 @@ _mcd_get_absolute_matches() {
         return 0
     fi
     
-    # If the path ends with '/', look for subdirectories
-    if [[ "$pattern" == */ ]]; then
-        local dir_path="${pattern%/}"
-        _mcd_debug "  looking for subdirectories under '$dir_path'"
-        if [[ -d "$dir_path" ]]; then
-            # Get immediate subdirectories only (breadth-first)
-            while IFS= read -r -d $'\0' dir; do
-                if [[ -d "$dir" ]] && [[ "$dir" != "$dir_path" ]]; then
-                    # Add WITHOUT trailing slash so user can add / to explore deeper
-                    matches+=("$dir")
-                    _mcd_debug "    found subdir: '$dir' (NO SLASH)"
-                fi
-            done < <(find "$dir_path" -maxdepth 1 -type d -not -path "$dir_path" -print0 2>/dev/null | sort -z)
-        else
-            _mcd_debug "    directory '$dir_path' does not exist"
-        fi
-    else
-        # Look for directories that match the pattern
-        local parent_dir="$(dirname "$pattern")"
-        local name_pattern="$(basename "$pattern")"
-        
-        _mcd_debug "  looking for dirs matching '$name_pattern' in '$parent_dir'"
-        
-        if [[ -d "$parent_dir" ]]; then
-            # Handle root directory case to avoid double slash
-            local search_pattern
-            if [[ "$parent_dir" == "/" ]]; then
-                search_pattern="/$name_pattern"*
-            else
-                search_pattern="$parent_dir/$name_pattern"*
-            fi
-            
-            _mcd_debug "    using glob pattern: '$search_pattern'"
-            
-            # Use bash glob expansion with proper escaping
-            shopt -s nullglob
-            for dir in $search_pattern; do
-                if [[ -d "$dir" ]]; then
-                    matches+=("$dir")
-                    _mcd_debug "    found match: '$dir'"
-                fi
-            done
-            shopt -u nullglob
-            
-            # Sort the matches
-            if [ ${#matches[@]} -gt 1 ]; then
-                IFS=$'\n' matches=($(sort <<<"${matches[*]}"))
-                _mcd_debug "    sorted ${#matches[@]} matches"
-            fi
-        else
-            _mcd_debug "    parent directory '$parent_dir' does not exist"
-        fi
-    fi
+    # Use the mcd binary directly for consistent behavior with the main command
+    # This ensures absolute patterns have the same comprehensive search as relative patterns
+    local idx=0
+    local match
     
-    _mcd_debug "found ${#matches[@]} absolute matches"
+    _mcd_debug "using mcd binary for absolute pattern '$pattern'"
+    
+    while true; do
+        match=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
+        if [ $? -ne 0 ] || [ -z "$match" ]; then
+            break
+        fi
+        _mcd_debug "  absolute match #$idx: '$match'"
+        matches+=("$match")
+        idx=$((idx + 1))
+        # Safety limit to prevent infinite loops
+        if [ $idx -gt 100 ]; then
+            break
+        fi
+    done
+    
+    _mcd_debug "found ${#matches[@]} absolute matches via binary"
     if [ ${#matches[@]} -eq 0 ]; then
         _mcd_debug "returning empty result (no printf output)"
         return 0
