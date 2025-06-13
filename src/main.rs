@@ -419,6 +419,15 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
                             };
                             immediate_matches.push(dir_match.clone());
                             all_matches.push(dir_match);
+                        } else if name_lower.starts_with(&search_lower) {
+                            // Prefix match
+                            let dir_match = DirectoryMatch {
+                                path: path.clone(),
+                                depth_from_current: 1,
+                                match_quality: MatchQuality::PrefixDown,
+                            };
+                            immediate_matches.push(dir_match.clone());
+                            all_matches.push(dir_match);
                         } else if name_lower.contains(&search_lower) {
                             // Partial match
                             let dir_match = DirectoryMatch {
@@ -438,9 +447,10 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
         }
     }
     
-    // If there are any matches in immediate subdirectories, return early to avoid deep search
-    // This prioritizes local matches over distant ones
-    if immediate_matches.len() > 0 {
+    // If there are exact matches in immediate subdirectories, return early to avoid deep search
+    // This prioritizes exact local matches over distant ones, but still allows deep search for partial matches
+    let has_exact_immediate = immediate_matches.iter().any(|m| m.match_quality == MatchQuality::ExactDown);
+    if has_exact_immediate {
         return finalize_matches(all_matches);
     }
     
@@ -467,19 +477,26 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
                             let name_str = name.to_string_lossy();
                             let name_lower = name_str.to_lowercase();
                             
-                            // Check for any match (exact or partial)
+                            // Check for any match (exact, prefix, or partial)
                             if name_lower == search_lower {
                                 // Exact match
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
-                                    depth_from_current: depth as i32,
+                                    depth_from_current: (depth + 1) as i32,
                                     match_quality: MatchQuality::ExactDown,
+                                });
+                            } else if name_lower.starts_with(&search_lower) {
+                                // Prefix match
+                                level_matches.push(DirectoryMatch {
+                                    path: path.clone(),
+                                    depth_from_current: (depth + 1) as i32,
+                                    match_quality: MatchQuality::PrefixDown,
                                 });
                             } else if name_lower.contains(&search_lower) {
                                 // Partial match
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
-                                    depth_from_current: depth as i32,
+                                    depth_from_current: (depth + 1) as i32,
                                     match_quality: MatchQuality::PartialDown,
                                 });
                             }
@@ -511,22 +528,47 @@ fn finalize_matches(mut matches: Vec<DirectoryMatch>) -> Vec<DirectoryMatch> {
     matches.sort_by(|a, b| a.path.cmp(&b.path));
     matches.dedup_by(|a, b| a.path == b.path);
     
-    // Sort by priority: match quality first, then depth
+    // Sort by priority with clear prioritization
     matches.sort_by(|a, b| {
-        // First prioritize by match quality (ExactUp > PartialUp > ExactDown > PartialDown)
-        let quality_cmp = a.match_quality.cmp(&b.match_quality);
-        if quality_cmp != std::cmp::Ordering::Equal {
-            return quality_cmp;
+        // Define priority categories
+        let get_priority = |m: &DirectoryMatch| -> u32 {
+            match (m.depth_from_current, &m.match_quality) {
+                // Immediate subdirectory exact matches - highest priority
+                (1, MatchQuality::ExactDown) => 0,
+                // Immediate subdirectory prefix matches - very high priority
+                (1, MatchQuality::PrefixDown) => 1,
+                // Immediate subdirectory partial matches - high priority
+                (1, MatchQuality::PartialDown) => 2,
+                // Up tree exact matches - medium-high priority
+                (_, MatchQuality::ExactUp) => 3,
+                // Up tree partial matches - medium priority
+                (_, MatchQuality::PartialUp) => 4,
+                // Deeper exact matches - lower priority
+                (_, MatchQuality::ExactDown) => 5,
+                // Deeper prefix matches - lower priority
+                (_, MatchQuality::PrefixDown) => 6,
+                // Deeper partial matches - lowest priority
+                (_, MatchQuality::PartialDown) => 7,
+            }
+        };
+        
+        let a_priority = get_priority(a);
+        let b_priority = get_priority(b);
+        
+        // First sort by priority
+        let priority_cmp = a_priority.cmp(&b_priority);
+        if priority_cmp != std::cmp::Ordering::Equal {
+            return priority_cmp;
         }
         
-        // For same quality, sort by depth (closer first for up matches, shallower first for down matches)
+        // Within same priority, sort by depth (shallower first for down matches, closer first for up matches)
         match a.match_quality {
             MatchQuality::ExactUp | MatchQuality::PartialUp => {
-                // For up matches, sort by depth descending (closer to current = higher depth)
+                // For up matches, closer to current (higher depth) comes first
                 b.depth_from_current.cmp(&a.depth_from_current)
             }
-            MatchQuality::ExactDown | MatchQuality::PrefixDown | MatchQuality::PartialDown => {
-                // For down matches, sort by depth ascending (shallower = lower depth)
+            _ => {
+                // For down matches, shallower (lower depth) comes first
                 a.depth_from_current.cmp(&b.depth_from_current)
             }
         }
