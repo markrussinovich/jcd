@@ -13,6 +13,10 @@ use std::{
 const MAX_MATCHES: usize = 20;           // Stop after finding enough matches
 const MAX_SEARCH_TIME_MS: u64 = 500;    // Max time to spend searching (milliseconds)
 
+fn is_debug_enabled() -> bool {
+    env::var("MCD_DEBUG").unwrap_or_default() == "1"
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum MatchQuality {
     ExactUp,     // Exact match up the path - highest priority
@@ -60,21 +64,37 @@ impl SearchContext {
 /// Returns (search_directory, pattern) where search_directory is the resolved starting point
 /// and pattern is the remaining search term after resolving relative components.
 fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, String) {
+    if is_debug_enabled() {
+        eprintln!("DEBUG: resolve_search_context: current_dir={}, search_term='{}'", current_dir.display(), search_term);
+    }
+    
     // Handle empty search term
     if search_term.is_empty() {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Empty search term, returning current directory");
+        }
         return (current_dir.to_path_buf(), String::new());
     }
     
     // Handle pure directory navigation without search pattern
     if search_term == ".." {
         if let Some(parent) = current_dir.parent() {
+            if is_debug_enabled() {
+                eprintln!("DEBUG: Parent directory navigation to {}", parent.display());
+            }
             return (parent.to_path_buf(), String::new());
         } else {
+            if is_debug_enabled() {
+                eprintln!("DEBUG: Already at root, staying in current directory");
+            }
             return (current_dir.to_path_buf(), String::new());
         }
     }
     
     if search_term == "." {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Current directory navigation, staying put");
+        }
         return (current_dir.to_path_buf(), String::new());
     }
     
@@ -84,30 +104,45 @@ fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, St
         let mut resolved_dir = current_dir.to_path_buf();
         let mut remaining_pattern = String::new();
         
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Processing relative path pattern");
+        }
+        
         for component in path.components() {
             match component {
                 std::path::Component::CurDir => {
-                    // "." - stay in current directory
+                    if is_debug_enabled() {
+                        eprintln!("DEBUG: Current dir component, staying in {}", resolved_dir.display());
+                    }
                     continue;
                 }
                 std::path::Component::ParentDir => {
-                    // ".." - go to parent directory
                     if let Some(parent) = resolved_dir.parent() {
+                        if is_debug_enabled() {
+                            eprintln!("DEBUG: Parent dir component, moving from {} to {}", resolved_dir.display(), parent.display());
+                        }
                         resolved_dir = parent.to_path_buf();
                     }
                 }
                 std::path::Component::Normal(name) => {
-                    // This is the search pattern
                     remaining_pattern = name.to_string_lossy().to_string();
+                    if is_debug_enabled() {
+                        eprintln!("DEBUG: Found search pattern '{}' in relative path", remaining_pattern);
+                    }
                     break;
                 }
                 _ => {
-                    // Handle other components (like root, prefix on Windows)
+                    if is_debug_enabled() {
+                        eprintln!("DEBUG: Other path component encountered");
+                    }
                     break;
                 }
             }
         }
         
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Resolved relative path: search_dir={}, pattern='{}'", resolved_dir.display(), remaining_pattern);
+        }
         return (resolved_dir, remaining_pattern);
     }
     
@@ -116,15 +151,24 @@ fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, St
         let mut resolved_dir = current_dir.to_path_buf();
         let path = Path::new(search_term);
         
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Processing multiple parent directory navigation");
+        }
+        
         for component in path.components() {
             match component {
                 std::path::Component::ParentDir => {
                     if let Some(parent) = resolved_dir.parent() {
+                        if is_debug_enabled() {
+                            eprintln!("DEBUG: Moving up from {} to {}", resolved_dir.display(), parent.display());
+                        }
                         resolved_dir = parent.to_path_buf();
                     }
                 }
                 std::path::Component::CurDir => {
-                    // Stay in current directory
+                    if is_debug_enabled() {
+                        eprintln!("DEBUG: Staying in current directory");
+                    }
                 }
                 _ => {
                     break;
@@ -132,10 +176,16 @@ fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, St
             }
         }
         
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Final resolved directory: {}", resolved_dir.display());
+        }
         return (resolved_dir, String::new());
     }
     
     // For absolute paths and regular patterns, use the original behavior
+    if is_debug_enabled() {
+        eprintln!("DEBUG: Using current directory for search with pattern '{}'", search_term);
+    }
     (current_dir.to_path_buf(), search_term.to_string())
 }
 
@@ -168,7 +218,9 @@ fn main() {
     // Handle relative paths and standard directory navigation
     let (search_dir, pattern) = resolve_search_context(&current_dir, search_term);
     
-    // eprintln!("DEBUG: Searching for '{}' from {}", pattern, search_dir.display());
+    if is_debug_enabled() {
+        eprintln!("DEBUG: Searching for '{}' from {}", pattern, search_dir.display());
+    }
     
     // Use threaded search with busy indicator (unless in quiet mode)
     let matches = if quiet_mode {
@@ -177,10 +229,14 @@ fn main() {
         search_with_progress(&search_dir, &pattern)
     };
     
-    // eprintln!("DEBUG: Found {} matches", matches.len());
+    if is_debug_enabled() {
+        eprintln!("DEBUG: Found {} matches", matches.len());
+    }
     
     if matches.is_empty() || tab_index >= matches.len() {
-        // eprintln!("DEBUG: No matches or index out of range");
+        if is_debug_enabled() {
+            eprintln!("DEBUG: No matches or index out of range");
+        }
         process::exit(1);
     }
     
@@ -277,11 +333,17 @@ fn show_busy_indicator(search_complete: &Arc<Mutex<bool>>) {
 }
 
 fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<DirectoryMatch> {
+    if is_debug_enabled() {
+        eprintln!("DEBUG: find_matching_directories: current_dir={}, search_term='{}'", current_dir.display(), search_term);
+    }
+    
     let mut matches = Vec::new();
     
     // Handle empty search term (pure directory navigation like "..", "../../")
     if search_term.is_empty() {
-        // Return the current directory as the only match
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Empty search term, returning current directory as match");
+        }
         matches.push(DirectoryMatch {
             path: current_dir.to_path_buf(),
             depth_from_current: 0,
@@ -292,21 +354,29 @@ fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<Direc
     
     // Handle absolute paths
     if search_term.starts_with('/') {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Processing absolute path: {}", search_term);
+        }
         let path = Path::new(search_term);
         
         if search_term.ends_with('/') {
-            // Path ends with slash - user wants to explore subdirectories OR navigate to the directory
-            let dir_path = Path::new(&search_term[..search_term.len()-1]); // Remove trailing slash
+            if is_debug_enabled() {
+                eprintln!("DEBUG: Absolute path ends with slash - exploring subdirectories");
+            }
+            let dir_path = Path::new(&search_term[..search_term.len()-1]);
             if dir_path.exists() && dir_path.is_dir() {
-                // First try to find subdirectories in this directory
                 let mut subdir_matches = Vec::new();
                 search_absolute_pattern(dir_path, "", &mut subdir_matches);
                 
                 if !subdir_matches.is_empty() {
-                    // Found subdirectories - return them
+                    if is_debug_enabled() {
+                        eprintln!("DEBUG: Found {} subdirectories in {}", subdir_matches.len(), dir_path.display());
+                    }
                     matches.extend(subdir_matches);
                 } else {
-                    // No subdirectories found - return the directory itself (like cd behavior)
+                    if is_debug_enabled() {
+                        eprintln!("DEBUG: No subdirectories found, returning directory itself");
+                    }
                     matches.push(DirectoryMatch {
                         path: dir_path.to_path_buf(),
                         depth_from_current: 0,
@@ -314,7 +384,9 @@ fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<Direc
                     });
                 }
             } else {
-                // Directory doesn't exist - treat as pattern search (remove trailing slash and search)
+                if is_debug_enabled() {
+                    eprintln!("DEBUG: Directory doesn't exist, treating as pattern search");
+                }
                 let search_term_no_slash = &search_term[..search_term.len()-1];
                 let (search_root, search_pattern) = find_search_root_and_pattern(search_term_no_slash);
                 if let Some(root) = search_root {
@@ -322,18 +394,23 @@ fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<Direc
                 }
             }
         } else if path.exists() && path.is_dir() {
-            // Path exists exactly - return it directly without searching subdirectories
+            if is_debug_enabled() {
+                eprintln!("DEBUG: Absolute path exists exactly, returning it directly");
+            }
             matches.push(DirectoryMatch {
                 path: path.to_path_buf(),
                 depth_from_current: 0,
                 match_quality: MatchQuality::ExactDown,
             });
         } else {
-            // Path doesn't exist - find the longest existing prefix and search from there
+            if is_debug_enabled() {
+                eprintln!("DEBUG: Absolute path doesn't exist, finding search root and pattern");
+            }
             let (search_root, search_pattern) = find_search_root_and_pattern(search_term);
             if let Some(root) = search_root {
-                // For absolute paths, we want to match directories in the parent directory
-                // that start with or contain the search pattern, similar to relative path behavior
+                if is_debug_enabled() {
+                    eprintln!("DEBUG: Searching from root {} for pattern '{}'", root.display(), search_pattern);
+                }
                 search_absolute_pattern(&root, &search_pattern, &mut matches);
             }
         }
@@ -342,33 +419,56 @@ fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<Direc
     
     // Handle path-like patterns (contains '/')
     if search_term.contains('/') {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Processing path-like pattern with '/'");
+        }
         let mut context = SearchContext::new();
         search_path_pattern_fast(current_dir, search_term, &mut matches, &mut context);
         if !matches.is_empty() {
+            if is_debug_enabled() {
+                eprintln!("DEBUG: Found {} matches for path pattern", matches.len());
+            }
             return finalize_matches(matches);
         }
     }
     
-    // New comprehensive search logic - find ALL matches first, then sort by priority
+    if is_debug_enabled() {
+        eprintln!("DEBUG: Starting comprehensive search - up tree then down tree");
+    }
     
     // 1. Search up for exact matches, then partial matches (direct path to root only)
     let up_matches = search_up_tree_with_priority(current_dir, search_term);
+    if is_debug_enabled() {
+        eprintln!("DEBUG: Found {} matches searching up tree", up_matches.len());
+    }
     matches.extend(up_matches);
     
     // 2. Search down for all matches (exact and partial) from current directory only
     let down_matches = search_down_breadth_first_all(current_dir, search_term);
+    if is_debug_enabled() {
+        eprintln!("DEBUG: Found {} matches searching down tree", down_matches.len());
+    }
     matches.extend(down_matches);
     
-    // 4. Return all matches sorted by priority
+    // Return all matches sorted by priority
     if !matches.is_empty() {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Total {} matches found, finalizing", matches.len());
+        }
         return finalize_matches(matches);
     }
     
-    // No matches found
+    if is_debug_enabled() {
+        eprintln!("DEBUG: No matches found");
+    }
     Vec::new()
 }
 
 fn search_up_tree_with_priority(current_dir: &Path, search_term: &str) -> Vec<DirectoryMatch> {
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_up_tree_with_priority: searching for '{}'", search_term);
+    }
+    
     let mut exact_matches = Vec::new();
     let mut partial_matches = Vec::new();
     let mut current = current_dir;
@@ -381,15 +481,23 @@ fn search_up_tree_with_priority(current_dir: &Path, search_term: &str) -> Vec<Di
             let name_str = name.to_string_lossy();
             let name_lower = name_str.to_lowercase();
             
+            if is_debug_enabled() {
+                eprintln!("DEBUG: Checking parent '{}' at depth {}", name_str, depth);
+            }
+            
             if name_lower == search_lower {
-                // Exact match
+                if is_debug_enabled() {
+                    eprintln!("DEBUG: Exact match found: {}", parent.display());
+                }
                 exact_matches.push(DirectoryMatch {
                     path: parent.to_path_buf(),
                     depth_from_current: depth,
                     match_quality: MatchQuality::ExactUp,
                 });
             } else if name_lower.contains(&search_lower) {
-                // Partial match
+                if is_debug_enabled() {
+                    eprintln!("DEBUG: Partial match found: {}", parent.display());
+                }
                 partial_matches.push(DirectoryMatch {
                     path: parent.to_path_buf(),
                     depth_from_current: depth,
@@ -401,13 +509,21 @@ fn search_up_tree_with_priority(current_dir: &Path, search_term: &str) -> Vec<Di
         depth -= 1;
     }
     
-    // Return exact matches first, then partial matches
     let mut result = exact_matches;
     result.extend(partial_matches);
+    
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_up_tree_with_priority completed with {} matches", result.len());
+    }
+    
     result
 }
 
 fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<DirectoryMatch> {
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_down_breadth_first_all: searching for '{}'", search_term);
+    }
+    
     use std::collections::VecDeque;
     
     let mut queue = VecDeque::new();
@@ -418,6 +534,10 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
     
     // First, search immediate subdirectories (depth 1) to check for early stopping
     let mut immediate_matches = Vec::new();
+    
+    if is_debug_enabled() {
+        eprintln!("DEBUG: Processing immediate subdirectories in {}", current_dir.display());
+    }
     
     // Process current directory (depth 0) first
     if let Ok(entries) = fs::read_dir(current_dir) {
@@ -434,7 +554,9 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
                         
                         // Check for any match in immediate subdirectories
                         if name_lower == search_lower {
-                            // Exact match
+                            if is_debug_enabled() {
+                                eprintln!("DEBUG: Immediate exact match: {}", path.display());
+                            }
                             let dir_match = DirectoryMatch {
                                 path: path.clone(),
                                 depth_from_current: 1,
@@ -443,7 +565,9 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
                             immediate_matches.push(dir_match.clone());
                             all_matches.push(dir_match);
                         } else if name_lower.starts_with(&search_lower) {
-                            // Prefix match
+                            if is_debug_enabled() {
+                                eprintln!("DEBUG: Immediate prefix match: {}", path.display());
+                            }
                             let dir_match = DirectoryMatch {
                                 path: path.clone(),
                                 depth_from_current: 1,
@@ -452,7 +576,9 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
                             immediate_matches.push(dir_match.clone());
                             all_matches.push(dir_match);
                         } else if name_lower.contains(&search_lower) {
-                            // Partial match
+                            if is_debug_enabled() {
+                                eprintln!("DEBUG: Immediate partial match: {}", path.display());
+                            }
                             let dir_match = DirectoryMatch {
                                 path: path.clone(),
                                 depth_from_current: 1,
@@ -471,16 +597,25 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
     }
     
     // If there are exact or prefix matches in immediate subdirectories, return early to avoid deep search
-    // This prioritizes local matches over distant ones, but still allows deep search for partial-only matches
     let has_good_immediate = immediate_matches.iter().any(|m| matches!(m.match_quality, MatchQuality::ExactDown | MatchQuality::PrefixDown));
     if has_good_immediate {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Found good immediate matches, skipping deep search");
+        }
         return finalize_matches(all_matches);
+    }
+    
+    if is_debug_enabled() {
+        eprintln!("DEBUG: No good immediate matches, continuing with deep search");
     }
     
     // Otherwise, continue with breadth-first search for deeper levels
     while let Some((current_path, depth)) = queue.pop_front() {
         if depth == 0 || depth > max_depth {
             continue; // Skip depth 0 (already processed) and beyond max depth
+        }
+        if is_debug_enabled()  {
+            eprintln!("DEBUG: Searching depth {} in {}", depth, current_path.display());
         }
         
         let mut level_matches = Vec::new();
@@ -502,21 +637,27 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
                             
                             // Check for any match (exact, prefix, or partial)
                             if name_lower == search_lower {
-                                // Exact match
+                                if is_debug_enabled() {
+                                    eprintln!("DEBUG: Deep exact match at depth {}: {}", depth + 1, path.display());
+                                }
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
                                     depth_from_current: (depth + 1) as i32,
                                     match_quality: MatchQuality::ExactDown,
                                 });
                             } else if name_lower.starts_with(&search_lower) {
-                                // Prefix match
+                                if is_debug_enabled() {
+                                    eprintln!("DEBUG: Deep prefix match at depth {}: {}", depth + 1, path.display());
+                                }
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
                                     depth_from_current: (depth + 1) as i32,
                                     match_quality: MatchQuality::PrefixDown,
                                 });
                             } else if name_lower.contains(&search_lower) {
-                                // Partial match
+                                if is_debug_enabled() {
+                                    eprintln!("DEBUG: Deep partial match at depth {}: {}", depth + 1, path.display());
+                                }
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
                                     depth_from_current: (depth + 1) as i32,
@@ -543,13 +684,28 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
         }
     }
     
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_down_breadth_first_all completed with {} total matches", all_matches.len());
+    }
+    
     finalize_matches(all_matches)
 }
 
 fn finalize_matches(mut matches: Vec<DirectoryMatch>) -> Vec<DirectoryMatch> {
+    if is_debug_enabled() {
+        eprintln!("DEBUG: finalize_matches: input {} matches", matches.len());
+        for (i, m) in matches.iter().enumerate() {
+            eprintln!("DEBUG:   [{}] {:?} depth={} path={}", i, m.match_quality, m.depth_from_current, m.path.display());
+        }
+    }
+    
     // Remove duplicates based on path
     matches.sort_by(|a, b| a.path.cmp(&b.path));
     matches.dedup_by(|a, b| a.path == b.path);
+    
+    if is_debug_enabled() {
+        eprintln!("DEBUG: After dedup: {} matches", matches.len());
+    }
     
     // Sort by priority with clear prioritization
     matches.sort_by(|a, b| {
@@ -597,6 +753,13 @@ fn finalize_matches(mut matches: Vec<DirectoryMatch>) -> Vec<DirectoryMatch> {
         }
     });
     
+    if is_debug_enabled() {
+        eprintln!("DEBUG: After sorting: {} matches", matches.len());
+        for (i, m) in matches.iter().enumerate() {
+            eprintln!("DEBUG:   [{}] {:?} depth={} path={}", i, m.match_quality, m.depth_from_current, m.path.display());
+        }
+    }
+    
     matches
 }
 
@@ -607,36 +770,68 @@ fn search_path_pattern_fast(
     matches: &mut Vec<DirectoryMatch>,
     context: &mut SearchContext,
 ) {
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_path_pattern_fast: current_dir={}, search_term='{}'", current_dir.display(), search_term);
+    }
+    
     let parts: Vec<&str> = search_term.split('/').collect();
     if parts.is_empty() || !context.should_continue() {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: search_path_pattern_fast: early exit - parts empty or context expired");
+        }
         return;
     }
     
     let first_part = parts[0];
     let remaining_parts = &parts[1..];
     
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_path_pattern_fast: split into first_part='{}', remaining_parts={:?}", first_part, remaining_parts);
+    }
+    
     // Search for the first part in current directory and subdirectories
-    search_pattern_recursive_fast(current_dir, first_part, remaining_parts, matches, context, 0, 3);
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_path_pattern_fast: starting recursive search down from current dir");
+    }
+    search_pattern_recursive_fast(current_dir, first_part, remaining_parts, matches, context, 0, 4);
     
     // Also search up the tree for the first part (but limit this to avoid slowdown)
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_path_pattern_fast: starting search up the tree");
+    }
     let mut current = current_dir;
     let mut depth = -1;
     let mut up_count = 0;
     
     while let Some(parent) = current.parent() {
         if !context.should_continue() || up_count >= 10 {
+            if is_debug_enabled() {
+                eprintln!("DEBUG: search_path_pattern_fast: stopping up search - context expired or max up count reached");
+            }
             break;
         }
         
         if let Some(name) = parent.file_name() {
             let name_str = name.to_string_lossy();
+            if is_debug_enabled() {
+                eprintln!("DEBUG: search_path_pattern_fast: checking parent '{}' at depth {}", name_str, depth);
+            }
+            
             if name_str.to_lowercase().contains(&first_part.to_lowercase()) {
+                if is_debug_enabled() {
+                    eprintln!("DEBUG: search_path_pattern_fast: parent '{}' contains pattern '{}'", name_str, first_part);
+                }
+                
                 if remaining_parts.is_empty() {
                     let match_quality = if name_str.to_lowercase() == first_part.to_lowercase() {
                         MatchQuality::ExactUp
                     } else {
                         MatchQuality::PartialUp
                     };
+                    
+                    if is_debug_enabled() {
+                        eprintln!("DEBUG: search_path_pattern_fast: adding up match {:?} for {}", match_quality, parent.display());
+                    }
                     
                     matches.push(DirectoryMatch {
                         path: parent.to_path_buf(),
@@ -645,6 +840,9 @@ fn search_path_pattern_fast(
                     });
                     context.add_match();
                 } else {
+                    if is_debug_enabled() {
+                        eprintln!("DEBUG: search_path_pattern_fast: recursing from parent for remaining patterns");
+                    }
                     search_pattern_recursive_fast(parent, &remaining_parts[0], &remaining_parts[1..], matches, context, depth, 3);
                 }
             }
@@ -652,6 +850,10 @@ fn search_path_pattern_fast(
         current = parent;
         depth -= 1;
         up_count += 1;
+    }
+    
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_path_pattern_fast: completed with {} total matches", matches.len());
     }
 }
 
@@ -664,13 +866,29 @@ fn search_pattern_recursive_fast(
     base_depth: i32,
     max_depth: usize,
 ) {
+    if is_debug_enabled() {
+        eprintln!("DEBUG: search_pattern_recursive_fast: dir={}, pattern='{}', remaining={:?}, base_depth={}, max_depth={}", 
+                 current_dir.display(), pattern, remaining_patterns, base_depth, max_depth);
+    }
+    
     if max_depth == 0 || !context.should_continue() {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: search_pattern_recursive_fast: early exit - max_depth=0 or context expired");
+        }
         return;
     }
     
     if let Ok(entries) = fs::read_dir(current_dir) {
+        let mut entry_count = 0;
+        let mut match_count = 0;
+        
         for entry in entries.flatten() {
+            entry_count += 1;
+            
             if !context.should_continue() {
+                if is_debug_enabled() {
+                    eprintln!("DEBUG: search_pattern_recursive_fast: breaking due to context timeout");
+                }
                 break;
             }
             
@@ -680,12 +898,22 @@ fn search_pattern_recursive_fast(
                     if let Some(name) = path.file_name() {
                         let name_str = name.to_string_lossy();
                         if name_str.to_lowercase().contains(&pattern.to_lowercase()) {
+                            match_count += 1;
+                            
+                            if is_debug_enabled() {
+                                eprintln!("DEBUG: search_pattern_recursive_fast: found matching dir '{}' for pattern '{}'", name_str, pattern);
+                            }
+                            
                             if remaining_patterns.is_empty() {
                                 let match_quality = if name_str.to_lowercase() == pattern.to_lowercase() {
                                     if base_depth < 0 { MatchQuality::ExactUp } else { MatchQuality::ExactDown }
                                 } else {
                                     if base_depth < 0 { MatchQuality::PartialUp } else { MatchQuality::PartialDown }
                                 };
+                                
+                                if is_debug_enabled() {
+                                    eprintln!("DEBUG: search_pattern_recursive_fast: adding final match {:?} for {}", match_quality, path.display());
+                                }
                                 
                                 matches.push(DirectoryMatch {
                                     path: path.clone(),
@@ -694,6 +922,9 @@ fn search_pattern_recursive_fast(
                                 });
                                 context.add_match();
                             } else {
+                                if is_debug_enabled() {
+                                    eprintln!("DEBUG: search_pattern_recursive_fast: recursing deeper for remaining patterns");
+                                }
                                 search_pattern_recursive_fast(
                                     &path,
                                     remaining_patterns[0],
@@ -722,6 +953,13 @@ fn search_pattern_recursive_fast(
                 }
             }
         }
+        
+        if is_debug_enabled() {
+            eprintln!("DEBUG: search_pattern_recursive_fast: processed {} entries, found {} pattern matches in {}", 
+                     entry_count, match_count, current_dir.display());
+        }
+    } else if is_debug_enabled() {
+        eprintln!("DEBUG: search_pattern_recursive_fast: failed to read directory {}", current_dir.display());
     }
 }
 
@@ -729,7 +967,7 @@ fn search_absolute_pattern(parent_dir: &Path, pattern: &str, matches: &mut Vec<D
     use std::collections::VecDeque;
     
     let mut queue = VecDeque::new();
-    let mut immediate_matches = Vec::new();
+    let mut immediate_matches: Vec<DirectoryMatch> = Vec::new();
     queue.push_back((parent_dir.to_path_buf(), 0));
     let search_lower = pattern.to_lowercase();
     let max_depth = 8;
@@ -749,7 +987,6 @@ fn search_absolute_pattern(parent_dir: &Path, pattern: &str, matches: &mut Vec<D
                         
                         // Check for immediate matches
                         if name_lower == search_lower {
-                            // Exact match
                             let dir_match = DirectoryMatch {
                                 path: path.clone(),
                                 depth_from_current: 1,
@@ -758,7 +995,6 @@ fn search_absolute_pattern(parent_dir: &Path, pattern: &str, matches: &mut Vec<D
                             immediate_matches.push(dir_match.clone());
                             matches.push(dir_match);
                         } else if name_lower.starts_with(&search_lower) {
-                            // Prefix match
                             let dir_match = DirectoryMatch {
                                 path: path.clone(),
                                 depth_from_current: 1,
@@ -767,7 +1003,6 @@ fn search_absolute_pattern(parent_dir: &Path, pattern: &str, matches: &mut Vec<D
                             immediate_matches.push(dir_match.clone());
                             matches.push(dir_match);
                         } else if name_lower.contains(&search_lower) {
-                            // Contains match
                             let dir_match = DirectoryMatch {
                                 path: path.clone(),
                                 depth_from_current: 1,
@@ -787,7 +1022,7 @@ fn search_absolute_pattern(parent_dir: &Path, pattern: &str, matches: &mut Vec<D
     
     // If there are any matches in immediate subdirectories, return early to avoid deep search
     // This prioritizes local matches over distant ones (same logic as relative paths)
-    if immediate_matches.len() > 0 {
+    if !immediate_matches.is_empty() {
         return;
     }
     
