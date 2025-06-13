@@ -295,16 +295,12 @@ fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<Direc
         let path = Path::new(search_term);
         
         if path.exists() && path.is_dir() {
-            // Path exists exactly - add it as a match and search subdirectories
+            // Path exists exactly - return it directly without searching subdirectories
             matches.push(DirectoryMatch {
                 path: path.to_path_buf(),
                 depth_from_current: 0,
                 match_quality: MatchQuality::ExactDown,
             });
-            // Also search subdirectories
-            let mut context = SearchContext::new();
-            let adaptive_depth = get_adaptive_depth(path);
-            search_down_tree_fast(path, "", &mut matches, &mut context, 1, adaptive_depth);
         } else {
             // Path doesn't exist - find the longest existing prefix and search from there
             let (search_root, search_pattern) = find_search_root_and_pattern(search_term);
@@ -447,10 +443,10 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str) -> Vec<D
         }
     }
     
-    // If there are exact matches in immediate subdirectories, return early to avoid deep search
-    // This prioritizes exact local matches over distant ones, but still allows deep search for partial matches
-    let has_exact_immediate = immediate_matches.iter().any(|m| m.match_quality == MatchQuality::ExactDown);
-    if has_exact_immediate {
+    // If there are exact or prefix matches in immediate subdirectories, return early to avoid deep search
+    // This prioritizes local matches over distant ones, but still allows deep search for partial-only matches
+    let has_good_immediate = immediate_matches.iter().any(|m| matches!(m.match_quality, MatchQuality::ExactDown | MatchQuality::PrefixDown));
+    if has_good_immediate {
         return finalize_matches(all_matches);
     }
     
@@ -577,82 +573,6 @@ fn finalize_matches(mut matches: Vec<DirectoryMatch>) -> Vec<DirectoryMatch> {
     matches
 }
 
-fn get_adaptive_depth(current_dir: &Path) -> usize {
-    // Estimate directory size by counting immediate children
-    if let Ok(entries) = fs::read_dir(current_dir) {
-        let dir_count = entries
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().is_dir())
-            .take(50) // Stop counting after 50
-            .count();
-        
-        match dir_count {
-            0..=10 => 4,   // Small directory: search deeper
-            11..=30 => 3,  // Medium directory: normal depth
-            31..=50 => 2,  // Large directory: shallow search
-            _ => 1,        // Very large directory: minimal search
-        }
-    } else {
-        3 // Default depth if we can't read the directory
-    }
-}
-
-// Keep existing functions for backward compatibility with absolute paths and patterns
-fn search_down_tree_fast(
-    current_dir: &Path,
-    search_term: &str,
-    matches: &mut Vec<DirectoryMatch>,
-    context: &mut SearchContext,
-    depth: usize,
-    max_depth: usize,
-) {
-    if depth > max_depth {
-        return;
-    }
-    
-    // Only check time limit, not match count limit, to ensure we find ALL matches
-    if context.start_time.elapsed() > context.max_time {
-        return;
-    }
-    
-    if let Ok(entries) = fs::read_dir(current_dir) {
-        // Collect all entries first to avoid issues with iterator
-        let entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-        
-        for entry in entries {
-            // Don't check should_continue() here to ensure we explore all branches
-            if let Ok(metadata) = entry.metadata() {
-                if metadata.is_dir() {
-                    let path = entry.path();
-                    if let Some(name) = path.file_name() {
-                        let name_str = name.to_string_lossy();
-                        
-                        // Check for match
-                        if search_term.is_empty() || name_str.to_lowercase().contains(&search_term.to_lowercase()) {
-                            let match_quality = if search_term.is_empty() || name_str.to_lowercase() == search_term.to_lowercase() {
-                                MatchQuality::ExactDown
-                            } else {
-                                MatchQuality::PartialDown
-                            };
-                            
-                            matches.push(DirectoryMatch {
-                                path: path.clone(),
-                                depth_from_current: if depth == 0 { 0 } else { depth as i32 },
-                                match_quality,
-                            });
-                            context.add_match();
-                        }
-                        
-                        // Always recurse into subdirectory to find all matches
-                        if depth < max_depth && context.start_time.elapsed() <= context.max_time {
-                            search_down_tree_fast(&path, search_term, matches, context, depth + 1, max_depth);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
 
 fn search_path_pattern_fast(
     current_dir: &Path, 
