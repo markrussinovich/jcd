@@ -295,11 +295,31 @@ fn find_matching_directories(current_dir: &Path, search_term: &str) -> Vec<Direc
         let path = Path::new(search_term);
         
         if search_term.ends_with('/') {
-            // Path ends with slash - user wants to explore subdirectories
+            // Path ends with slash - user wants to explore subdirectories OR navigate to the directory
             let dir_path = Path::new(&search_term[..search_term.len()-1]); // Remove trailing slash
             if dir_path.exists() && dir_path.is_dir() {
-                // Search for subdirectories in this directory
-                search_absolute_pattern(dir_path, "", &mut matches);
+                // First try to find subdirectories in this directory
+                let mut subdir_matches = Vec::new();
+                search_absolute_pattern(dir_path, "", &mut subdir_matches);
+                
+                if !subdir_matches.is_empty() {
+                    // Found subdirectories - return them
+                    matches.extend(subdir_matches);
+                } else {
+                    // No subdirectories found - return the directory itself (like cd behavior)
+                    matches.push(DirectoryMatch {
+                        path: dir_path.to_path_buf(),
+                        depth_from_current: 0,
+                        match_quality: MatchQuality::ExactDown,
+                    });
+                }
+            } else {
+                // Directory doesn't exist - treat as pattern search (remove trailing slash and search)
+                let search_term_no_slash = &search_term[..search_term.len()-1];
+                let (search_root, search_pattern) = find_search_root_and_pattern(search_term_no_slash);
+                if let Some(root) = search_root {
+                    search_absolute_pattern(&root, &search_pattern, &mut matches);
+                }
             }
         } else if path.exists() && path.is_dir() {
             // Path exists exactly - return it directly without searching subdirectories
