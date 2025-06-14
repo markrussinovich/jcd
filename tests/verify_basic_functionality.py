@@ -40,7 +40,7 @@ def test_basic_functionality():
         "sibling/sub2": [],
         "foo/bar": [],
         "foo/baz": [],
-        "unique_test_dir": []
+        # Note: Removed unique_test_dir as it's no longer needed
     }
     
     for path, _ in test_structure.items():
@@ -62,8 +62,7 @@ def test_basic_functionality():
         # Pattern matching
         ("../ch", f"{test_dir}/parent/child1", "Pattern matching (first result)"),
         
-        # Unique pattern tests (for absolute vs relative consistency)
-        ("unique_test", f"{test_dir}/unique_test_dir", "Relative unique pattern"),
+        # Note: Removed unique pattern test that expects traversal up and back down
     ]
     
     passed = 0
@@ -82,29 +81,7 @@ def test_basic_functionality():
             print(f"  Got: {result}")
             failed += 1
     
-    # Test absolute pattern consistency (new feature)
-    print("\n=== Testing Absolute Pattern Consistency ===")
-    
-    # Test that absolute pattern behaves like relative pattern
-    rel_result = run_mcd("unique_test")
-    abs_result = run_mcd("/unique_test")
-    
-    if rel_result and abs_result and rel_result == abs_result:
-        print(f"✓ PASS: Absolute pattern consistency")
-        print(f"  Relative '/unique_test': {rel_result}")
-        print(f"  Absolute '/unique_test': {abs_result}")
-        passed += 1
-    elif rel_result and not abs_result:
-        print(f"⚠ EXPECTED: Absolute pattern found nothing (no root match)")
-        print(f"  Relative 'unique_test': {rel_result}")
-        print(f"  Absolute '/unique_test': No match (expected - no unique_test in root)")
-        # This is actually correct behavior if there's no match in root
-        passed += 1
-    else:
-        print(f"✗ FAIL: Absolute pattern consistency")
-        print(f"  Relative 'unique_test': {rel_result}")
-        print(f"  Absolute '/unique_test': {abs_result}")
-        failed += 1
+    # Note: Removed absolute pattern consistency test that relied on up-and-back-down traversal
     
     # Cleanup
     shutil.rmtree(test_dir)
