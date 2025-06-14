@@ -40,6 +40,16 @@ mcd() {
             return 0
             ;;
     esac
+
+    # Handle trailing slash for Enter - navigate to directory directly
+    if [[ "$search_term" == */ ]]; then
+        local dir_without_slash="${search_term%/}"
+        if [[ -d "$dir_without_slash" ]]; then
+            cd "$dir_without_slash"
+            return $?
+        fi
+        # If directory doesn't exist, fall through to search logic
+    fi    
     
     # Get the best match (index 0)
     local dest
@@ -147,11 +157,6 @@ _mcd_should_reset_state() {
                 return 0
             fi
             _mcd_debug "  -> CONTINUE: current input exactly matches cached result #$i: '$match'"
-            return 1
-        fi
-        # Allow trailing slash differences if both original pattern and current have trailing slashes
-        if [[ "$_MCD_ORIGINAL_PATTERN" == */ ]] && [[ "$cur" == */ ]] && [[ "${match%/}" == "${cur%/}" ]]; then
-            _mcd_debug "  -> CONTINUE: current input matches cached result #$i (subdirectory expansion mode): '$match'"
             return 1
         fi
     done
