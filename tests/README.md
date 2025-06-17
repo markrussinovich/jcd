@@ -27,6 +27,29 @@ Usage:
 ./tests/validate_mcd.sh
 ```
 
+### `verify_basic_functionality.py`
+**Python-based comprehensive test**
+- Tests core MCD functionality including relative path navigation
+- Tests case sensitivity functionality with `-i` flag
+- Cross-platform Python script for reliable testing
+- No external dependencies beyond standard library
+
+Usage:
+```bash
+python3 tests/verify_basic_functionality.py
+```
+
+### `test_case_sensitivity.sh`
+**Standalone case sensitivity test**
+- Dedicated test for the new `-i` flag functionality
+- Tests both case insensitive (default) and case sensitive modes
+- Bash-based test with comprehensive scenarios
+
+Usage:
+```bash
+./tests/test_case_sensitivity.sh
+```
+
 ### `simple_test.sh`
 **Manual testing and documentation**
 - Good for manual verification during development
