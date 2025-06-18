@@ -4,11 +4,33 @@
 # Usage: Add "source /path/to/mcd_function.sh" to your ~/.bashrc
 
 mcd() {
-    if [ $# -ne 1 ]; then
-        echo "Usage: mcd <directory_pattern>"
+    # Parse arguments to handle -i flag
+    local case_insensitive=false
+    local search_term=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -i)
+                case_insensitive=true
+                shift
+                ;;
+            *)
+                if [ -z "$search_term" ]; then
+                    search_term="$1"
+                else
+                    echo "Usage: mcd [-i] <directory_pattern>"
+                    return 1
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    if [ -z "$search_term" ]; then
+        echo "Usage: mcd [-i] <directory_pattern>"
         return 1
     fi
-    local search_term="$1"
+    
     local mcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/mcd}"
     
     # Ensure binary exists
@@ -53,7 +75,11 @@ mcd() {
     
     # Get the best match (index 0)
     local dest
-    dest=$("$mcd_binary" "$search_term" 0)
+    if [ "$case_insensitive" = true ]; then
+        dest=$("$mcd_binary" -i "$search_term" 0)
+    else
+        dest=$("$mcd_binary" "$search_term" 0)
+    fi
     if [ $? -ne 0 ] || [ -z "$dest" ]; then
         echo "No directories found matching '$search_term'"
         return 1
@@ -302,12 +328,13 @@ _mcd_run_with_animation() {
 # Get all matches for a relative pattern
 _mcd_get_relative_matches() {
     local pattern="$1"
+    local case_insensitive="$2"  # true/false
     local mcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/mcd}"
     local matches=()
     local idx=0
     local match
 
-    _mcd_debug "getting relative matches for pattern '$pattern'"
+    _mcd_debug "getting relative matches for pattern '$pattern' (case_insensitive=$case_insensitive)"
 
     # Handle special cases for directory navigation patterns
     case "$pattern" in
@@ -378,7 +405,11 @@ _mcd_get_relative_matches() {
             else
                 # Use the mcd binary directly, no per-call animation
                 while true; do
-                    match=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
+                    if [ "$case_insensitive" = "true" ]; then
+                        match=$("$mcd_binary" -i "$pattern" "$idx" --quiet 2>/dev/null)
+                    else
+                        match=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
+                    fi
                     if [ $? -ne 0 ] || [ -z "$match" ]; then
                         break
                     fi
@@ -405,16 +436,17 @@ _mcd_get_relative_matches() {
 # Get all matches for an absolute pattern
 _mcd_get_absolute_matches() {
     local pattern="$1"
+    local case_insensitive="$2"  # true/false
     local mcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/mcd}"
     local matches=()
     
-    _mcd_debug "getting absolute matches for pattern '$pattern'"
+    _mcd_debug "getting absolute matches for pattern '$pattern' (case_insensitive=$case_insensitive)"
     
     # Handle relative path patterns that start with ../
     if [[ "$pattern" == ../* ]]; then
         _mcd_debug "  pattern starts with ../, using relative match logic"
         local match_output
-        match_output=$(_mcd_get_relative_matches "$pattern")
+        match_output=$(_mcd_get_relative_matches "$pattern" "$case_insensitive")
         if [[ -n "$match_output" ]]; then
             readarray -t matches <<<"$match_output"
         fi
@@ -435,7 +467,11 @@ _mcd_get_absolute_matches() {
     _mcd_debug "using mcd binary for absolute pattern '$pattern'"
     
     while true; do
-        match=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
+        if [ "$case_insensitive" = "true" ]; then
+            match=$("$mcd_binary" -i "$pattern" "$idx" --quiet 2>/dev/null)
+        else
+            match=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
+        fi
         if [ $? -ne 0 ] || [ -z "$match" ]; then
             break
         fi
@@ -486,10 +522,21 @@ _mcd_tab_complete() {
     _mcd_debug ""
     _mcd_debug "=== TAB COMPLETION CALLED ==="
     _mcd_debug "cur='$cur' prev='$prev' COMP_CWORD=$COMP_CWORD"
+    _mcd_debug "full command: ${COMP_WORDS[*]}"
 
-    # Only complete the first argument
-    if [ $COMP_CWORD -ne 1 ]; then
-        _mcd_debug "not completing first argument, returning"
+    # Parse arguments to find -i flag and determine what we're completing
+    local has_i_flag=false
+    local pattern_index=1
+    
+    # Check if -i flag is present
+    if [[ ${#COMP_WORDS[@]} -gt 1 ]] && [[ "${COMP_WORDS[1]}" == "-i" ]]; then
+        has_i_flag=true
+        pattern_index=2
+    fi
+    
+    # Only complete the pattern argument (could be at index 1 or 2 depending on -i flag)
+    if [ $COMP_CWORD -ne $pattern_index ]; then
+        _mcd_debug "not completing pattern argument (COMP_CWORD=$COMP_CWORD, pattern_index=$pattern_index), returning"
         return 0
     fi
 
@@ -523,7 +570,7 @@ _mcd_tab_complete() {
                 _MCD_ORIGINAL_PATTERN="$parent_dir/"
                 _MCD_IS_RELATIVE_PATTERN=false
                 local match_output
-                match_output=$(_mcd_get_absolute_matches "$parent_dir/")
+                match_output=$(_mcd_get_absolute_matches "$parent_dir/" "false")
                 if [[ -n "$match_output" ]]; then
                     readarray -t _MCD_CURRENT_MATCHES <<<"$match_output"
                     _MCD_COMPLETION_MODE="cycling"
@@ -565,7 +612,7 @@ _mcd_tab_complete() {
             _MCD_ORIGINAL_PATTERN="$cur"
             _MCD_IS_RELATIVE_PATTERN=false
             local match_output
-            match_output=$(_mcd_run_with_animation _mcd_get_absolute_matches "$cur")
+            match_output=$(_mcd_run_with_animation _mcd_get_absolute_matches "$cur" "$has_i_flag")
             _mcd_debug "raw match output: '$match_output'"
             if [[ -n "$match_output" ]]; then
                 readarray -t _MCD_CURRENT_MATCHES <<<"$match_output"
@@ -579,7 +626,7 @@ _mcd_tab_complete() {
             _MCD_ORIGINAL_PATTERN="$cur"
             _MCD_IS_RELATIVE_PATTERN=true
             local match_output
-            match_output=$(_mcd_run_with_animation _mcd_get_relative_matches "$cur")
+            match_output=$(_mcd_run_with_animation _mcd_get_relative_matches "$cur" "$has_i_flag")
             _mcd_debug "raw match output: '$match_output'"
             if [[ -n "$match_output" ]]; then
                 readarray -t _MCD_CURRENT_MATCHES <<<"$match_output"
@@ -593,7 +640,7 @@ _mcd_tab_complete() {
             _MCD_ORIGINAL_PATTERN="$cur"
             _MCD_IS_RELATIVE_PATTERN=true
             local match_output
-            match_output=$(_mcd_run_with_animation _mcd_get_relative_matches "$cur")
+            match_output=$(_mcd_run_with_animation _mcd_get_relative_matches "$cur" "$has_i_flag")
             _mcd_debug "raw match output: '$match_output'"
             if [[ -n "$match_output" ]]; then
                 readarray -t _MCD_CURRENT_MATCHES <<<"$match_output"
