@@ -1,14 +1,14 @@
-# MCD - Enhanced Directory Navigation Tool
+# JCD - Enhanced Directory Navigation Tool
 
-`mcd` is a Rust-based command-line tool that provides enhanced directory navigation with substring matching and smart selection. It's like the `cd` command, but with superpowers!
+`jcd` is a Rust-based command-line tool that provides enhanced directory navigation with substring matching and smart selection. It's like the `cd` command, but with superpowers!
 
-![MCD Demo](https://github.com/markrussinovich/mcd/blob/main/assets/mcd.gif?raw=true)
+![JCD Demo](https://github.com/markrussinovich/jcd/blob/main/assets/jcd.gif?raw=true)
 
 ## Features
 
 - **Tab Navigation**: Intelligent cycling through all matches with visual feedback and animated loading indicators
 - **First-Match Jump**: Press Enter after typing to immediately navigate to the best match
-- **Priority Matching Order**: 
+- **Priority Matching Order**:
   1. Exact matches prioritized over partial matches
   2. Up-tree matches (parent directories) have highest priority
   3. Down-tree matches (subdirectories) sorted by proximity
@@ -21,15 +21,15 @@
 1. **Clone and Build**:
    ```bash
    git clone <repository-url>
-   cd mcd
-   cargo build --release
+   cd jcd
+
    ```
 
 2. **Add to Shell Configuration**:
-   Add the following lines to your `~/.bashrc` (replace `/path/to/mcd` with your actual path):
+   Add the following lines to your `~/.bashrc` (replace `/path/to/jcd` with your actual path):
    ```bash
-   export MCD_BINARY="/path/to/mcd/target/release/mcd"
-   source /path/to/mcd/mcd_function.sh
+   export JCD_BINARY="/path/to/jcd/target/release/jcd"
+   source /path/to/jcd/jcd_function.sh
    ```
 
 3. **Reload Shell**:
@@ -37,14 +37,14 @@
    source ~/.bashrc
    ```
 
-> **Note**: The shell function integration is **required** because a Rust binary cannot change the directory of its parent shell process. The `mcd_function.sh` wrapper handles this limitation by calling the binary and then changing directories based on its output.
+> **Note**: The shell function integration is **required** because a Rust binary cannot change the directory of its parent shell process. The `jcd_function.sh` wrapper handles this limitation by calling the binary and then changing directories based on its output.
 
 ## Usage
 
 ```bash
-mcd <substring>        # Navigate to directory matching substring
-mcd <absolute_path>    # Navigate to absolute path
-mcd <path/pattern>     # Navigate using path-like patterns
+jcd <substring>        # Navigate to directory matching substring
+jcd <absolute_path>    # Navigate to absolute path
+jcd <path/pattern>     # Navigate using path-like patterns
 ```
 
 ### Examples
@@ -52,42 +52,42 @@ mcd <path/pattern>     # Navigate using path-like patterns
 #### Basic Navigation
 ```bash
 # Navigate to any directory containing "proj"
-mcd proj
+jcd proj
 
-# Find directories with "src" in the name  
-mcd src
+# Find directories with "src" in the name
+jcd src
 
 # Navigate to parent directories matching "work"
-mcd work
+jcd work
 
 # Navigate to absolute path
-mcd /home/user/projects
+jcd /home/user/projects
 
 # Use path patterns
-mcd projects/src    # Find 'src' within 'projects'
+jcd projects/src    # Find 'src' within 'projects'
 ```
 
 
 ### Advanced Tab Completion
 
-When multiple directories match your search term, `mcd` provides intelligent tab completion that cycles through all available matches with visual feedback:
+When multiple directories match your search term, `jcd` provides intelligent tab completion that cycles through all available matches with visual feedback:
 
 ```bash
-# Type 'mcd fo' and press Tab - shows animated dots while searching
-$ mcd fo<Tab>
+# Type 'jcd fo' and press Tab - shows animated dots while searching
+$ jcd fo<Tab>
 ...  # Animated loading indicator
-mcd /.font-unix
+jcd /.font-unix
 
 # Press Tab again to cycle to next match
-$ mcd /.font-unix<Tab>  
-mcd /foo
+$ jcd /.font-unix<Tab>
+jcd /foo
 
 # Press Tab again to cycle to next match
-$ mcd /foo<Tab>
-mcd /some/other/folder
+$ jcd /foo<Tab>
+jcd /some/other/folder
 
 # Press Enter to navigate to the currently shown match
-$ mcd /foo<Enter>
+$ jcd /foo<Enter>
 # Now in /foo directory
 ```
 
@@ -104,15 +104,15 @@ $ mcd /foo<Enter>
 
 ## How It Works
 
-The `mcd` tool works in two parts:
+The `jcd` tool works in two parts:
 
-1. **Rust Binary (`src/main.rs`)**: 
+1. **Rust Binary (`src/main.rs`)**:
    - Performs the directory search and sorting
    - Returns **all matching directories** when given different index parameters
    - Supports cycling through multiple matches via index parameter
    - Cannot change the parent shell's directory (fundamental limitation)
 
-2. **Shell Function (`mcd_function.sh`)**:
+2. **Shell Function (`jcd_function.sh`)**:
    - Wraps the Rust binary and handles directory changing
    - Provides intelligent tab completion with animated visual feedback
    - Manages completion state to enable smooth cycling experience
@@ -126,7 +126,7 @@ The `mcd` tool works in two parts:
 2. **Search Up**: Looks through parent directories for matches
 3. **Search Down**: Recursively searches subdirectories (up to 8 levels deep for performance)
 4. **Comprehensive Collection**: Gathers **all** matching directories (not just the first one)
-5. **Smart Sorting**: 
+5. **Smart Sorting**:
    - Prioritizes match quality (exact vs partial)
    - Sorts by proximity within each quality category
    - Maintains consistent ordering for reliable tab completion
@@ -163,14 +163,14 @@ cargo test
 ### Project Structure
 
 ```
-mcd/
+jcd/
 ├── src/
 │   └── main.rs                  # Core Rust implementation with relative path support
 ├── .github/
-│   └── copilot-instructions.md  # Copilot custom instructions  
+│   └── copilot-instructions.md  # Copilot custom instructions
 ├── .vscode/
 │   └── tasks.json               # VS Code build tasks
-├── mcd_function.sh              # Enhanced bash wrapper with animations (ESSENTIAL)
+├── jcd_function.sh              # Enhanced bash wrapper with animations (ESSENTIAL)
 ├── Cargo.toml                   # Rust dependencies and metadata
 ├── Cargo.lock                   # Dependency lock file
 ├── tests/                       # Test scripts
@@ -190,7 +190,7 @@ The project includes a comprehensive test suite located in the `tests/` director
 ./tests/test_relative_comprehensive.sh
 
 # Quick validation for CI/CD
-./tests/validate_mcd.sh
+./tests/validate_jcd.sh
 
 # Simple functionality test
 ./tests/simple_test.sh
@@ -216,14 +216,14 @@ cargo build --release
 
 # Test basic navigation
 cd /tmp
-mcd ..
+jcd ..
 
 # Test relative paths
-mcd ../Documents
-mcd ../../usr/local
+jcd ../Documents
+jcd ../../usr/local
 
 # Test pattern matching
-mcd ../proj   # Should match project directories in parent
+jcd ../proj   # Should match project directories in parent
 ```
 
 See `tests/README.md` for detailed information about the test suite.
