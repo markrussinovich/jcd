@@ -3,8 +3,7 @@
 # JCD Shell Function - Enhanced Directory Navigation with Inline Tab Completion
 # Usage: Add "source /path/to/jcd_function.sh" to your ~/.bashrc
 
-<<<<<<< HEAD:mcd_function.sh
-mcd() {
+jcd() {
     # Parse arguments to handle -i flag
     local case_insensitive=false
     local search_term=""
@@ -19,7 +18,7 @@ mcd() {
                 if [ -z "$search_term" ]; then
                     search_term="$1"
                 else
-                    echo "Usage: mcd [-i] <directory_pattern>"
+                    echo "Usage: jcd [-i] <directory_pattern>"
                     return 1
                 fi
                 shift
@@ -28,22 +27,12 @@ mcd() {
     done
     
     if [ -z "$search_term" ]; then
-        echo "Usage: mcd [-i] <directory_pattern>"
+        echo "Usage: jcd [-i] <directory_pattern>"
         return 1
     fi
     
-    local mcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/mcd}"
+    local jcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/jcd}"
     
-=======
-jcd() {
-    if [ $# -ne 1 ]; then
-        echo "Usage: jcd <directory_pattern>"
-        return 1
-    fi
-    local search_term="$1"
-    local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
-
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
     # Ensure binary exists
     if [ ! -x "$jcd_binary" ]; then
         echo "Error: JCD binary not found at $jcd_binary"
