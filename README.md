@@ -22,7 +22,7 @@
    ```bash
    git clone <repository-url>
    cd jcd
-
+   cargo build --release
    ```
 
 2. **Add to Shell Configuration**:
