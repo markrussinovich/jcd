@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "=== MCD Comprehensive Test Suite ==="
+echo "=== JCD Comprehensive Test Suite ==="
 echo "Running all tests to verify functionality..."
 echo
 
@@ -17,10 +17,10 @@ FAILED_TESTS=()
 run_test() {
     local test_name="$1"
     local test_script="$2"
-    
+
     echo -e "${YELLOW}Running: $test_name${NC}"
     echo "----------------------------------------"
-    
+
     if [ -f "$test_script" ] && [ -x "$test_script" ]; then
         if "$test_script"; then
             echo -e "${GREEN}✓ PASSED: $test_name${NC}"
@@ -41,10 +41,10 @@ run_test() {
 run_python_test() {
     local test_name="$1"
     local test_script="$2"
-    
+
     echo -e "${YELLOW}Running: $test_name${NC}"
     echo "----------------------------------------"
-    
+
     if [ -f "$test_script" ]; then
         if python3 "$test_script"; then
             echo -e "${GREEN}✓ PASSED: $test_name${NC}"
@@ -74,7 +74,7 @@ echo
 # Core functionality tests
 run_test "Simple Functionality Test" "./simple_test.sh"
 run_test "Comprehensive Relative Path Test" "./test_relative_comprehensive.sh"
-run_test "Validation Test" "./validate_mcd.sh"
+run_test "Validation Test" "./validate_jcd.sh"
 
 # Regression and bug fix tests
 run_test "Quick Regression Test" "./quick_regression_test.sh"

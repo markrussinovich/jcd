@@ -4,7 +4,7 @@ echo "=== Final Test: Absolute Path Consistency Fix ==="
 echo
 
 # Set up test
-cd /datadrive/mcd
+cd /datadrive/jcd
 rm -rf test_final
 mkdir -p test_final/tmp/foo/deep/nested/uniquefoo999
 cd test_final/tmp/foo
@@ -20,7 +20,7 @@ echo "AFTER:  '/uniquefoo' finds same result as 'uniquefoo'"
 echo
 
 echo "Testing relative pattern 'uniquefoo':"
-result_rel=$(../../../target/release/mcd uniquefoo 0 2>/dev/null)
+result_rel=$(../../../target/release/jcd uniquefoo 0 2>/dev/null)
 if [ $? -eq 0 ]; then
     echo "  ✓ Relative: $result_rel"
 else
@@ -28,7 +28,7 @@ else
 fi
 
 echo "Testing absolute pattern '/uniquefoo':"
-result_abs=$(../../../target/release/mcd /uniquefoo 0 2>/dev/null)
+result_abs=$(../../../target/release/jcd /uniquefoo 0 2>/dev/null)
 if [ $? -eq 0 ]; then
     echo "  ✓ Absolute: $result_abs"
     if [[ "$result_rel" == "$result_abs" ]]; then
@@ -48,8 +48,8 @@ echo "   - Changed absolute path logic to use search_down_breadth_first_all()"
 echo "   - Removed limitation of max_depth=3 for absolute patterns"
 echo "   - Now uses max_depth=8 like relative patterns"
 echo
-echo "2. Shell completion (mcd_function.sh):"
-echo "   - Updated _mcd_get_absolute_matches() to use mcd binary directly"
+echo "2. Shell completion (jcd_function.sh):"
+echo "   - Updated _jcd_get_absolute_matches() to use jcd binary directly"
 echo "   - Ensures shell completion has same behavior as binary"
 echo "   - Removed custom glob-based absolute path logic"
 echo
@@ -61,5 +61,5 @@ echo "✓ Shell completion uses same logic as main binary"
 echo "✓ Maintains all existing functionality"
 
 # Cleanup
-cd /datadrive/mcd
+cd /datadrive/jcd
 rm -rf test_final

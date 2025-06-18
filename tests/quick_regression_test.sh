@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "=== Quick Regression Test for MCD Changes ==="
+echo "=== Quick Regression Test for JCD Changes ==="
 echo "Testing that existing functionality still works after absolute path consistency fix"
 echo
 
@@ -15,15 +15,15 @@ FAILED=0
 
 test_result() {
     local description="$1"
-    local command="$2" 
+    local command="$2"
     local expected_pattern="$3"
-    
+
     echo -e "\n${YELLOW}Testing:${NC} $description"
     echo "Command: $command"
-    
+
     result=$(eval "$command" 2>/dev/null)
     exit_code=$?
-    
+
     if [[ $exit_code -eq 0 ]] && [[ "$result" =~ $expected_pattern ]]; then
         echo -e "${GREEN}✓ PASSED${NC} - Result: $result"
         ((PASSED++))
@@ -36,35 +36,35 @@ test_result() {
 
 # Setup test structure
 echo "Setting up test structure..."
-rm -rf /tmp/mcd_regression_test
-mkdir -p /tmp/mcd_regression_test/{parent/{child1,child2},sibling/{sub1,sub2},foo/{bar,baz}}
+rm -rf /tmp/jcd_regression_test
+mkdir -p /tmp/jcd_regression_test/{parent/{child1,child2},sibling/{sub1,sub2},foo/{bar,baz}}
 
-cd /tmp/mcd_regression_test/parent/child1
+cd /tmp/jcd_regression_test/parent/child1
 echo "Test directory: $(pwd)"
 echo "Structure created:"
-find /tmp/mcd_regression_test -type d | sort
+find /tmp/jcd_regression_test -type d | sort
 
 # Test core relative path functionality
 echo -e "\n=== Testing Core Relative Path Functionality ==="
 
 test_result "Parent navigation with '..'" \
-           "/datadrive/mcd/target/release/mcd '..'" \
+           "/datadrive/jcd/target/release/jcd '..'" \
            ".*/parent$"
 
 test_result "Grandparent navigation with '../..'" \
-           "/datadrive/mcd/target/release/mcd '../..'" \
-           ".*/mcd_regression_test$"
+           "/datadrive/jcd/target/release/jcd '../..'" \
+           ".*/jcd_regression_test$"
 
 test_result "Relative pattern '../child2'" \
-           "/datadrive/mcd/target/release/mcd '../child2'" \
+           "/datadrive/jcd/target/release/jcd '../child2'" \
            ".*/child2$"
 
 test_result "Deep relative pattern '../../foo'" \
-           "/datadrive/mcd/target/release/mcd '../../foo'" \
+           "/datadrive/jcd/target/release/jcd '../../foo'" \
            ".*/foo$"
 
 test_result "Pattern matching '../ch' (first match)" \
-           "/datadrive/mcd/target/release/mcd '../ch' 0" \
+           "/datadrive/jcd/target/release/jcd '../ch' 0" \
            ".*/child[12]$"
 
 # Test absolute path functionality (new feature)
@@ -76,27 +76,27 @@ echo -e "\n=== Testing Absolute Path Functionality (New) ==="
 # Test immediate match prioritization (recent fix)
 echo -e "\n=== Testing Immediate Match Prioritization ==="
 
-cd /tmp/mcd_regression_test
+cd /tmp/jcd_regression_test
 mkdir -p immediate_test/{un,unmemorize,unmemorize-demo}
 cd immediate_test
 
 test_result "Multiple immediate matches for 'un' (should return quickly)" \
-           "timeout 2s /datadrive/mcd/target/release/mcd 'un' 0" \
+           "timeout 2s /datadrive/jcd/target/release/jcd 'un' 0" \
            ".*/un$"
 
 test_result "Second match for 'un' pattern" \
-           "/datadrive/mcd/target/release/mcd 'un' 1" \
+           "/datadrive/jcd/target/release/jcd 'un' 1" \
            ".*/unmemorize"
 
 # Test shell function basic functionality
 echo -e "\n=== Testing Shell Function ==="
 
-cd /tmp/mcd_regression_test/parent/child1
-export MCD_BINARY="/datadrive/mcd/target/release/mcd"
-source /datadrive/mcd/mcd_function.sh 2>/dev/null
+cd /tmp/jcd_regression_test/parent/child1
+export JCD_BINARY="/datadrive/jcd/target/release/jcd"
+source /datadrive/jcd/jcd_function.sh 2>/dev/null
 
 # Test if shell function is loaded
-if declare -f mcd > /dev/null; then
+if declare -f jcd > /dev/null; then
     echo -e "${GREEN}✓ PASSED${NC} - Shell function loaded"
     ((PASSED++))
 else
@@ -108,19 +108,19 @@ fi
 original_dir=$(pwd)
 echo "Testing shell function navigation from: $original_dir"
 
-mcd ".." 2>/dev/null
+jcd ".." 2>/dev/null
 current_dir=$(pwd)
-if [[ "$current_dir" == "/tmp/mcd_regression_test/parent" ]]; then
+if [[ "$current_dir" == "/tmp/jcd_regression_test/parent" ]]; then
     echo -e "${GREEN}✓ PASSED${NC} - Shell function navigation works"
     ((PASSED++))
 else
-    echo -e "${RED}✗ FAILED${NC} - Expected /tmp/mcd_regression_test/parent, got $current_dir"
+    echo -e "${RED}✗ FAILED${NC} - Expected /tmp/jcd_regression_test/parent, got $current_dir"
     ((FAILED++))
 fi
 
 # Cleanup
 echo -e "\n=== Cleanup ==="
-rm -rf /tmp/mcd_regression_test
+rm -rf /tmp/jcd_regression_test
 echo "Test structure cleaned up"
 
 # Summary

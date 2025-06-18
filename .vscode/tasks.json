@@ -2,7 +2,7 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "Build MCD (Debug)",
+			"label": "Build JCD (Debug)",
 			"type": "shell",
 			"command": "source ~/.cargo/env && cargo build",
 			"group": "build",
@@ -11,7 +11,7 @@
 			]
 		},
 		{
-			"label": "Build MCD (Release)",
+			"label": "Build JCD (Release)",
 			"type": "shell",
 			"command": "source ~/.cargo/env && cargo build --release",
 			"group": "build",
@@ -20,12 +20,12 @@
 			]
 		},
 		{
-			"label": "Test MCD Binary",
+			"label": "Test JCD Binary",
 			"type": "shell",
-			"command": "source ~/.cargo/env && ./target/debug/mcd",
+			"command": "source ~/.cargo/env && ./target/debug/jcd",
 			"args": ["test"],
 			"group": "test",
-			"dependsOn": "Build MCD (Debug)"
+			"dependsOn": "Build JCD (Debug)"
 		},
 		{
 			"label": "Run Cargo Check",

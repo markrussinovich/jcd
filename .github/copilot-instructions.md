@@ -1,6 +1,6 @@
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 
-# MCD - Enhanced Directory Navigation Tool
+# JCD - Enhanced Directory Navigation Tool
 
 This is a Rust command-line tool that provides enhanced directory navigation capabilities:
 
@@ -12,7 +12,7 @@ This is a Rust command-line tool that provides enhanced directory navigation cap
 
 ## Architecture
 - `src/main.rs`: Core Rust binary that finds matching directories
-- `mcd.sh`: Bash wrapper function that enables directory changing in the parent shell
+- `jcd.sh`: Bash wrapper function that enables directory changing in the parent shell
 - Uses `crossterm` for terminal interaction and key handling
 
 ## Development Guidelines

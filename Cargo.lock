@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "mcd"
+name = "jcd"
 version = "1.0.1"
