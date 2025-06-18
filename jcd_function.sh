@@ -31,7 +31,7 @@ jcd() {
         return 1
     fi
     
-    local jcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/jcd}"
+    local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
     
     # Ensure binary exists
     if [ ! -x "$jcd_binary" ]; then
@@ -75,15 +75,11 @@ jcd() {
 
     # Get the best match (index 0)
     local dest
-<<<<<<< HEAD:mcd_function.sh
     if [ "$case_insensitive" = true ]; then
-        dest=$("$mcd_binary" -i "$search_term" 0)
+        dest=$("$jcd_binary" -i "$search_term" 0)
     else
-        dest=$("$mcd_binary" "$search_term" 0)
+        dest=$("$jcd_binary" "$search_term" 0)
     fi
-=======
-    dest=$("$jcd_binary" "$search_term" 0)
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
     if [ $? -ne 0 ] || [ -z "$dest" ]; then
         echo "No directories found matching '$search_term'"
         return 1
@@ -332,21 +328,13 @@ _jcd_run_with_animation() {
 # Get all matches for a relative pattern
 _jcd_get_relative_matches() {
     local pattern="$1"
-<<<<<<< HEAD:mcd_function.sh
     local case_insensitive="$2"  # true/false
-    local mcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/mcd}"
-=======
     local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
     local matches=()
     local idx=0
     local match
 
-<<<<<<< HEAD:mcd_function.sh
-    _mcd_debug "getting relative matches for pattern '$pattern' (case_insensitive=$case_insensitive)"
-=======
-    _jcd_debug "getting relative matches for pattern '$pattern'"
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
+    _jcd_debug "getting relative matches for pattern '$pattern' (case_insensitive=$case_insensitive)"
 
     # Handle special cases for directory navigation patterns
     case "$pattern" in
@@ -417,15 +405,11 @@ _jcd_get_relative_matches() {
             else
                 # Use the jcd binary directly, no per-call animation
                 while true; do
-<<<<<<< HEAD:mcd_function.sh
                     if [ "$case_insensitive" = "true" ]; then
-                        match=$("$mcd_binary" -i "$pattern" "$idx" --quiet 2>/dev/null)
+                        match=$("$jcd_binary" -i "$pattern" "$idx" --quiet 2>/dev/null)
                     else
-                        match=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
+                        match=$("$jcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
                     fi
-=======
-                    match=$("$jcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
                     if [ $? -ne 0 ] || [ -z "$match" ]; then
                         break
                     fi
@@ -452,29 +436,16 @@ _jcd_get_relative_matches() {
 # Get all matches for an absolute pattern
 _jcd_get_absolute_matches() {
     local pattern="$1"
-<<<<<<< HEAD:mcd_function.sh
     local case_insensitive="$2"  # true/false
-    local mcd_binary="${MCD_BINARY:-/datadrive/mcd/target/release/mcd}"
-    local matches=()
-    
-    _mcd_debug "getting absolute matches for pattern '$pattern' (case_insensitive=$case_insensitive)"
-    
-=======
     local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
     local matches=()
-
-    _jcd_debug "getting absolute matches for pattern '$pattern'"
-
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
+    
+    _jcd_debug "getting absolute matches for pattern '$pattern' (case_insensitive=$case_insensitive)"
     # Handle relative path patterns that start with ../
     if [[ "$pattern" == ../* ]]; then
         _jcd_debug "  pattern starts with ../, using relative match logic"
         local match_output
-<<<<<<< HEAD:mcd_function.sh
-        match_output=$(_mcd_get_relative_matches "$pattern" "$case_insensitive")
-=======
-        match_output=$(_jcd_get_relative_matches "$pattern")
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
+        match_output=$(_jcd_get_relative_matches "$pattern" "$case_insensitive")
         if [[ -n "$match_output" ]]; then
             readarray -t matches <<<"$match_output"
         fi
@@ -495,15 +466,11 @@ _jcd_get_absolute_matches() {
     _jcd_debug "using jcd binary for absolute pattern '$pattern'"
 
     while true; do
-<<<<<<< HEAD:mcd_function.sh
         if [ "$case_insensitive" = "true" ]; then
-            match=$("$mcd_binary" -i "$pattern" "$idx" --quiet 2>/dev/null)
+            match=$("$jcd_binary" -i "$pattern" "$idx" --quiet 2>/dev/null)
         else
-            match=$("$mcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
+            match=$("$jcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
         fi
-=======
-        match=$("$jcd_binary" "$pattern" "$idx" --quiet 2>/dev/null)
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
         if [ $? -ne 0 ] || [ -z "$match" ]; then
             break
         fi
@@ -551,11 +518,10 @@ _jcd_tab_complete() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-<<<<<<< HEAD:mcd_function.sh
-    _mcd_debug ""
-    _mcd_debug "=== TAB COMPLETION CALLED ==="
-    _mcd_debug "cur='$cur' prev='$prev' COMP_CWORD=$COMP_CWORD"
-    _mcd_debug "full command: ${COMP_WORDS[*]}"
+    _jcd_debug ""
+    _jcd_debug "=== TAB COMPLETION CALLED ==="
+    _jcd_debug "cur='$cur' prev='$prev' COMP_CWORD=$COMP_CWORD"
+    _jcd_debug "full command: ${COMP_WORDS[*]}"
 
     # Parse arguments to find -i flag and determine what we're completing
     local has_i_flag=false
@@ -569,16 +535,7 @@ _jcd_tab_complete() {
     
     # Only complete the pattern argument (could be at index 1 or 2 depending on -i flag)
     if [ $COMP_CWORD -ne $pattern_index ]; then
-        _mcd_debug "not completing pattern argument (COMP_CWORD=$COMP_CWORD, pattern_index=$pattern_index), returning"
-=======
-    _jcd_debug ""
-    _jcd_debug "=== TAB COMPLETION CALLED ==="
-    _jcd_debug "cur='$cur' prev='$prev' COMP_CWORD=$COMP_CWORD"
-
-    # Only complete the first argument
-    if [ $COMP_CWORD -ne 1 ]; then
-        _jcd_debug "not completing first argument, returning"
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
+        _jcd_debug "not completing pattern argument (COMP_CWORD=$COMP_CWORD, pattern_index=$pattern_index), returning"
         return 0
     fi
 
@@ -612,11 +569,7 @@ _jcd_tab_complete() {
                 _JCD_ORIGINAL_PATTERN="$parent_dir/"
                 _JCD_IS_RELATIVE_PATTERN=false
                 local match_output
-<<<<<<< HEAD:mcd_function.sh
-                match_output=$(_mcd_get_absolute_matches "$parent_dir/" "false")
-=======
-                match_output=$(_jcd_get_absolute_matches "$parent_dir/")
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
+                match_output=$(_jcd_get_absolute_matches "$parent_dir/" "false")
                 if [[ -n "$match_output" ]]; then
                     readarray -t _JCD_CURRENT_MATCHES <<<"$match_output"
                     _JCD_COMPLETION_MODE="cycling"
@@ -658,13 +611,8 @@ _jcd_tab_complete() {
             _JCD_ORIGINAL_PATTERN="$cur"
             _JCD_IS_RELATIVE_PATTERN=false
             local match_output
-<<<<<<< HEAD:mcd_function.sh
-            match_output=$(_mcd_run_with_animation _mcd_get_absolute_matches "$cur" "$has_i_flag")
-            _mcd_debug "raw match output: '$match_output'"
-=======
-            match_output=$(_jcd_run_with_animation _jcd_get_absolute_matches "$cur")
+            match_output=$(_jcd_run_with_animation _jcd_get_absolute_matches "$cur" "$has_i_flag")
             _jcd_debug "raw match output: '$match_output'"
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
             if [[ -n "$match_output" ]]; then
                 readarray -t _JCD_CURRENT_MATCHES <<<"$match_output"
             else
@@ -677,13 +625,8 @@ _jcd_tab_complete() {
             _JCD_ORIGINAL_PATTERN="$cur"
             _JCD_IS_RELATIVE_PATTERN=true
             local match_output
-<<<<<<< HEAD:mcd_function.sh
-            match_output=$(_mcd_run_with_animation _mcd_get_relative_matches "$cur" "$has_i_flag")
-            _mcd_debug "raw match output: '$match_output'"
-=======
-            match_output=$(_jcd_run_with_animation _jcd_get_relative_matches "$cur")
+            match_output=$(_jcd_run_with_animation _jcd_get_relative_matches "$cur" "$has_i_flag")
             _jcd_debug "raw match output: '$match_output'"
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
             if [[ -n "$match_output" ]]; then
                 readarray -t _JCD_CURRENT_MATCHES <<<"$match_output"
             else
@@ -696,13 +639,8 @@ _jcd_tab_complete() {
             _JCD_ORIGINAL_PATTERN="$cur"
             _JCD_IS_RELATIVE_PATTERN=true
             local match_output
-<<<<<<< HEAD:mcd_function.sh
-            match_output=$(_mcd_run_with_animation _mcd_get_relative_matches "$cur" "$has_i_flag")
-            _mcd_debug "raw match output: '$match_output'"
-=======
-            match_output=$(_jcd_run_with_animation _jcd_get_relative_matches "$cur")
+            match_output=$(_jcd_run_with_animation _jcd_get_relative_matches "$cur" "$has_i_flag")
             _jcd_debug "raw match output: '$match_output'"
->>>>>>> 6d3c3d83ec46e614cad36529b340ad54c85a4cb4:jcd_function.sh
             if [[ -n "$match_output" ]]; then
                 readarray -t _JCD_CURRENT_MATCHES <<<"$match_output"
             else
