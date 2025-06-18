@@ -10,10 +10,10 @@ import tempfile
 import shutil
 from pathlib import Path
 
-def run_mcd(pattern, index=0, cwd=None, case_sensitive=False):
+def run_mcd(pattern, index=0, cwd=None, case_sensitive=True):
     """Run the mcd binary and return the result."""
     cmd = ['/datadrive/mcd/target/debug/mcd']
-    if case_sensitive:
+    if not case_sensitive:  # Add -i flag for case insensitive
         cmd.append('-i')
     cmd.extend([pattern, str(index)])
     try:
@@ -111,7 +111,7 @@ def test_basic_functionality():
 def test_case_sensitivity():
     """Test case sensitivity functionality with -i flag."""
     print("\n=== Case Sensitivity Test ===")
-    print("Default: case insensitive, -i flag: case sensitive")
+    print("Default: case sensitive, -i flag: case insensitive")
     
     # Create test structure with different case directories
     test_dir = Path("/tmp/mcd_case_test")
@@ -127,12 +127,12 @@ def test_case_sensitivity():
     passed = 0
     failed = 0
     
-    # Test case insensitive (default behavior)
+    # Test case sensitivity
     tests = [
-        ("test", False, ["TestDir", "testdir", "TESTDIR"], "Case insensitive 'test'"),
-        ("TestDir", True, ["TestDir"], "Case sensitive 'TestDir'"),
-        ("testdir", True, ["testdir"], "Case sensitive 'testdir'"),
-        ("TESTDIR", True, ["TESTDIR"], "Case sensitive 'TESTDIR'"),
+        ("test", False, ["TestDir", "testdir", "TESTDIR"], "Case insensitive 'test' with -i"),
+        ("TestDir", True, ["TestDir"], "Case sensitive 'TestDir' (default)"),
+        ("testdir", True, ["testdir"], "Case sensitive 'testdir' (default)"),
+        ("TESTDIR", True, ["TESTDIR"], "Case sensitive 'TESTDIR' (default)"),
     ]
     
     for pattern, case_sensitive, possible_matches, description in tests:

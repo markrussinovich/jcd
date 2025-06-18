@@ -198,7 +198,7 @@ fn main() {
     }
     
     // Parse command line arguments for flags
-    let mut case_sensitive = false; // Default to case insensitive  
+    let mut case_sensitive = true; // Default to case sensitive
     let mut search_term = String::new();
     let mut tab_index = 0;
     let mut quiet_mode = false;
@@ -207,7 +207,7 @@ fn main() {
     while i < args.len() {
         match args[i].as_str() {
             "-i" => {
-                case_sensitive = true; // -i flag makes it case sensitive
+                case_sensitive = false; // -i flag makes it case insensitive
                 i += 1;
             }
             "--quiet" => {
