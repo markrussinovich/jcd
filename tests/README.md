@@ -1,6 +1,6 @@
-# MCD Test Suite
+# JCD Test Suite
 
-This directory contains test scripts for the MCD (Enhanced Directory Navigation) tool.
+This directory contains test scripts for the JCD (Enhanced Directory Navigation) tool.
 
 ## Test Scripts
 
@@ -16,7 +16,7 @@ Usage:
 ./tests/test_relative_comprehensive.sh
 ```
 
-### `validate_mcd.sh` 
+### `validate_jcd.sh`
 **Quick validation script**
 - Lightweight smoke test for CI/CD pipelines
 - Verifies binary exists and basic functionality works
@@ -24,12 +24,12 @@ Usage:
 
 Usage:
 ```bash
-./tests/validate_mcd.sh
+./tests/validate_jcd.sh
 ```
 
 ### `verify_basic_functionality.py`
 **Python-based comprehensive test**
-- Tests core MCD functionality including relative path navigation
+- Tests core JCD functionality including relative path navigation
 - Tests case sensitivity functionality with `-i` flag
 - Cross-platform Python script for reliable testing
 - No external dependencies beyond standard library
@@ -69,18 +69,18 @@ Usage:
 ./tests/test_relative_comprehensive.sh
 
 # Quick validation
-./tests/validate_mcd.sh
+./tests/validate_jcd.sh
 ```
 
 ### CI/CD Integration
 For automated testing, use the validate script:
 ```bash
-./tests/validate_mcd.sh && echo "Tests passed"
+./tests/validate_jcd.sh && echo "Tests passed"
 ```
 
 ## Test Requirements
 
-- Tests require the compiled binary at `target/release/mcd`
-- Tests create temporary directories under `/tmp/mcd_test/`
+- Tests require the compiled binary at `target/release/jcd`
+- Tests create temporary directories under `/tmp/jcd_test/`
 - All tests clean up after themselves
 - Tests should be run from the project root directory

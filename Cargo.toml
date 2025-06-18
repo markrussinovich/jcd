@@ -1,11 +1,11 @@
 [package]
-name = "mcd"
+name = "jcd"
 version = "1.0.1"
 edition = "2021"
 description = "Enhanced directory navigation tool with substring matching and tab completion cycling"
 authors = ["GitHub Copilot Assistant"]
 license = "MIT"
-repository = "https://github.com/username/mcd"
+repository = "https://github.com/username/jcd"
 keywords = ["cli", "navigation", "directory", "filesystem", "productivity"]
 categories = ["command-line-utilities", "filesystem"]
 

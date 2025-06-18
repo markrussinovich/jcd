@@ -1,12 +1,12 @@
 #!/bin/bash
 
 echo "=== Testing Absolute Path Bug Fix ==="
-echo "Bug: mcd /datadrive2/un should match /datadrive2/unmemorize, not /datadrive2/lost+found"
+echo "Bug: jcd /datadrive2/un should match /datadrive2/unmemorize, not /datadrive2/lost+found"
 echo
 
 # Build the binary
 echo "Building binary..."
-cd /datadrive/mcd
+cd /datadrive/jcd
 cargo build --release 2>&1
 
 if [ $? -ne 0 ]; then
@@ -27,11 +27,11 @@ echo "Directories in /datadrive2 that contain 'un':"
 ls -la /datadrive2/ 2>/dev/null | grep -i un || echo "No directories found"
 
 echo
-echo "Testing mcd binary with '/datadrive2/un':"
-result=$(./target/release/mcd "/datadrive2/un" 0 2>/dev/null)
+echo "Testing jcd binary with '/datadrive2/un':"
+result=$(./target/release/jcd "/datadrive2/un" 0 2>/dev/null)
 if [ $? -eq 0 ]; then
     echo "First match: $result"
-    
+
     # Check if it's a prefix match (starts with "un") or substring match (contains "un")
     basename_result=$(basename "$result")
     if [[ "$basename_result" =~ ^un ]]; then
@@ -49,7 +49,7 @@ fi
 echo
 echo "Getting all matches for '/datadrive2/un':"
 for i in {0..5}; do
-    result=$(./target/release/mcd "/datadrive2/un" $i 2>/dev/null)
+    result=$(./target/release/jcd "/datadrive2/un" $i 2>/dev/null)
     if [ $? -eq 0 ]; then
         basename_result=$(basename "$result")
         if [[ "$basename_result" =~ ^un ]]; then

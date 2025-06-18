@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Comprehensive test for MCD relative path functionality
+# Comprehensive test for JCD relative path functionality
 # This script tests all the new relative path features
 
-echo "=== MCD Relative Path Functionality Test ==="
+echo "=== JCD Relative Path Functionality Test ==="
 echo "Testing enhanced directory navigation with relative paths"
 
 # Color codes for output
@@ -17,24 +17,24 @@ PASSED=0
 FAILED=0
 
 # Test function
-test_mcd() {
+test_jcd() {
     local description="$1"
     local command="$2"
     local expected_pattern="$3"
     local current_dir="$(pwd)"
-    
+
     echo -e "\n${YELLOW}Test:${NC} $description"
     echo "Command: $command"
     echo "Current dir: $current_dir"
-    
+
     # Execute the command
     local result
     result=$(eval "$command" 2>&1)
     local exit_code=$?
-    
+
     echo "Result: $result"
     echo "Exit code: $exit_code"
-    
+
     if [[ $exit_code -eq 0 ]] && [[ "$result" =~ $expected_pattern ]]; then
         echo -e "${GREEN}✓ PASSED${NC}"
         ((PASSED++))
@@ -47,7 +47,7 @@ test_mcd() {
 
 # Setup test environment
 echo -e "\n=== Setting up test environment ==="
-TEST_ROOT="/tmp/mcd_test_comprehensive"
+TEST_ROOT="/tmp/jcd_test_comprehensive"
 rm -rf "$TEST_ROOT"
 mkdir -p "$TEST_ROOT"/{parent/{child1,child2,subdir/{deep1,deep2}},sibling/{sub1,sub2},foo/{bar,baz,foobar},test/{project1,project2}}
 
@@ -55,40 +55,40 @@ echo "Created test directory structure:"
 tree "$TEST_ROOT" 2>/dev/null || find "$TEST_ROOT" -type d | sort
 
 # Test binary directly
-echo -e "\n=== Testing MCD Binary Directly ==="
+echo -e "\n=== Testing JCD Binary Directly ==="
 
 cd "$TEST_ROOT/parent/child1"
 
 # Test 1: Basic parent navigation
-test_mcd "Navigate to parent with '..'" \
-         "/datadrive/mcd/target/release/mcd '..'" \
+test_jcd "Navigate to parent with '..'" \
+         "/datadrive/jcd/target/release/jcd '..'" \
          ".*/parent$"
 
-# Test 2: Multi-level navigation  
-test_mcd "Navigate two levels up with '../..'" \
-         "/datadrive/mcd/target/release/mcd '../..'" \
-         ".*/mcd_test_comprehensive$"
+# Test 2: Multi-level navigation
+test_jcd "Navigate two levels up with '../..'" \
+         "/datadrive/jcd/target/release/jcd '../..'" \
+         ".*/jcd_test_comprehensive$"
 
 # Test 3: Relative pattern search
-test_mcd "Search for 'child2' from parent level" \
-         "/datadrive/mcd/target/release/mcd '../child2'" \
+test_jcd "Search for 'child2' from parent level" \
+         "/datadrive/jcd/target/release/jcd '../child2'" \
          ".*/child2$"
 
 # Test 4: Deep relative search
-test_mcd "Search for 'foo' from grandparent level" \
-         "/datadrive/mcd/target/release/mcd '../../foo'" \
+test_jcd "Search for 'foo' from grandparent level" \
+         "/datadrive/jcd/target/release/jcd '../../foo'" \
          ".*/foo$"
 
 # Test 5: Multi-match relative search
-test_mcd "Find all matches for '../ch' pattern" \
-         "/datadrive/mcd/target/release/mcd '../ch' 0" \
+test_jcd "Find all matches for '../ch' pattern" \
+         "/datadrive/jcd/target/release/jcd '../ch' 0" \
          ".*/child[12]$"
 
 # Test shell function
-echo -e "\n=== Testing MCD Shell Function ==="
+echo -e "\n=== Testing JCD Shell Function ==="
 
 # Source the function
-source /datadrive/mcd/mcd_function.sh
+source /datadrive/jcd/jcd_function.sh
 
 cd "$TEST_ROOT/parent/child1"
 echo "Starting directory: $(pwd)"
@@ -96,8 +96,8 @@ echo "Starting directory: $(pwd)"
 # Test shell function navigation
 echo -e "\n${YELLOW}Testing shell function navigation:${NC}"
 
-echo "mcd '..' -> "
-mcd ".."
+echo "jcd '..' -> "
+jcd ".."
 if [[ "$(pwd)" == "$TEST_ROOT/parent" ]]; then
     echo -e "${GREEN}✓ PASSED${NC} - Now in parent directory"
     ((PASSED++))
@@ -106,8 +106,8 @@ else
     ((FAILED++))
 fi
 
-echo "mcd 'child1' -> "
-mcd "child1"
+echo "jcd 'child1' -> "
+jcd "child1"
 if [[ "$(pwd)" == "$TEST_ROOT/parent/child1" ]]; then
     echo -e "${GREEN}✓ PASSED${NC} - Back in child1"
     ((PASSED++))
@@ -116,8 +116,8 @@ else
     ((FAILED++))
 fi
 
-echo "mcd '../..' -> "
-mcd "../.."
+echo "jcd '../..' -> "
+jcd "../.."
 if [[ "$(pwd)" == "$TEST_ROOT" ]]; then
     echo -e "${GREEN}✓ PASSED${NC} - Now in test root"
     ((PASSED++))
@@ -126,8 +126,8 @@ else
     ((FAILED++))
 fi
 
-echo "mcd 'parent/child2' -> "
-mcd "parent/child2"
+echo "jcd 'parent/child2' -> "
+jcd "parent/child2"
 if [[ "$(pwd)" == "$TEST_ROOT/parent/child2" ]]; then
     echo -e "${GREEN}✓ PASSED${NC} - Now in child2"
     ((PASSED++))
@@ -140,11 +140,11 @@ fi
 echo -e "\n=== Tab Completion Test Instructions ==="
 echo "To test tab completion manually, run these commands:"
 echo "1. cd $TEST_ROOT/parent/child1"
-echo "2. Type: mcd ../<TAB>     (should show child1, child2, subdir)"
-echo "3. Type: mcd ../c<TAB>    (should cycle between child1, child2)"
-echo "4. Type: mcd ../../<TAB>  (should show parent, sibling, foo, test)"
-echo "5. Type: mcd ../sub<TAB>  (should complete to ../subdir/)"
-echo "6. Type: mcd ../subdir/<TAB> (should show deep1, deep2)"
+echo "2. Type: jcd ../<TAB>     (should show child1, child2, subdir)"
+echo "3. Type: jcd ../c<TAB>    (should cycle between child1, child2)"
+echo "4. Type: jcd ../../<TAB>  (should show parent, sibling, foo, test)"
+echo "5. Type: jcd ../sub<TAB>  (should complete to ../subdir/)"
+echo "6. Type: jcd ../subdir/<TAB> (should show deep1, deep2)"
 
 # Performance test
 echo -e "\n=== Performance Test ==="
@@ -153,7 +153,7 @@ cd "$TEST_ROOT/parent/child1"
 echo "Testing search performance with relative patterns..."
 time_start=$(date +%s%N)
 for i in {1..10}; do
-    /datadrive/mcd/target/release/mcd "../ch" >/dev/null 2>&1
+    /datadrive/jcd/target/release/jcd "../ch" >/dev/null 2>&1
 done
 time_end=$(date +%s%N)
 duration=$(( (time_end - time_start) / 1000000 ))  # Convert to milliseconds
