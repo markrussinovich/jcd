@@ -42,9 +42,14 @@
 ## Usage
 
 ```bash
-jcd <substring>        # Navigate to directory matching substring
-jcd <absolute_path>    # Navigate to absolute path
-jcd <path/pattern>     # Navigate using path-like patterns
+Usage:
+  jcd [--shell-init [path/to/jcd]]    - Adds JCD initialization to your shell rc file (e.g. .bashrc)
+  jcd [-i] <directory_pattern>        - Changes directory according to the pattern
+
+directory_pattern:
+  jcd <substring>        # Navigate to directory matching substring
+  jcd <absolute_path>    # Navigate to absolute path
+  jcd <path/pattern>     # Navigate using path-like patterns
 ```
 
 ### Examples
