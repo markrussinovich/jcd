@@ -3,13 +3,60 @@
 # JCD Shell Function - Enhanced Directory Navigation with Inline Tab Completion
 # Usage: Add "source /path/to/jcd_function.sh" to your ~/.bashrc
 
+_jcd_print_usage() {
+    echo "Usage:"
+    echo "  jcd [--shell-init [path/to/jcd]]    - Adds JCD initialization to your shell rc file (e.g. .bashrc)"
+    echo "  jcd [-i] <directory_pattern>        - Changes directory according to the pattern"
+    echo
+    echo "directory_pattern:"
+    echo "  jcd <substring>        # Navigate to directory matching substring"
+    echo "  jcd <absolute_path>    # Navigate to absolute path"
+    echo "  jcd <path/pattern>     # Navigate using path-like patterns"
+}
+
 jcd() {
-    # Parse arguments to handle -i flag
+    # Parse arguments to handle flags
     local case_insensitive=false
     local search_term=""
-    
+
     while [[ $# -gt 0 ]]; do
         case $1 in
+            --shell-init)
+                local BASHRC="$HOME/.bashrc"
+                local JCD_FUNC_PATH
+                JCD_FUNC_PATH="$(realpath "${BASH_SOURCE[0]}")"
+
+                local JCD_PATH
+                if [[ -n "$2" && ! "$2" =~ ^- ]]; then
+                    JCD_PATH="$2"
+                elif [[ -x "/usr/bin/jcd" ]]; then
+                    JCD_PATH="/usr/bin/jcd"
+                else
+                    echo "Error: Could not determine the path to the jcd binary."
+                    echo "Please specify the path explicitly: jcd --shell-init /path/to/jcd"
+                    return 1
+                fi
+
+                local EXPORT_LINE="export JCD_BINARY=\"$JCD_PATH\""
+                local SOURCE_LINE="source $JCD_FUNC_PATH"
+
+                # Update or append export line
+                if grep -q '^export JCD_BINARY=' "$BASHRC"; then
+                    sed -i "s|^export JCD_BINARY=.*|$EXPORT_LINE|" "$BASHRC"
+                else
+                    echo "$EXPORT_LINE" >> "$BASHRC"
+                fi
+
+                # Update or append source line
+                if grep -q '^source .*/jcd_function.sh' "$BASHRC"; then
+                    sed -i "s|^source .*/jcd_function.sh.*|$SOURCE_LINE|" "$BASHRC"
+                else
+                    echo "$SOURCE_LINE" >> "$BASHRC"
+                fi
+
+                echo "JCD: .bashrc updated. Please run 'source ~/.bashrc' or open a new terminal to activate."
+                return 0
+                ;;
             -i)
                 case_insensitive=true
                 shift
@@ -18,21 +65,21 @@ jcd() {
                 if [ -z "$search_term" ]; then
                     search_term="$1"
                 else
-                    echo "Usage: jcd [-i] <directory_pattern>"
+                    _jcd_print_usage
                     return 1
                 fi
                 shift
                 ;;
         esac
     done
-    
+
     if [ -z "$search_term" ]; then
-        echo "Usage: jcd [-i] <directory_pattern>"
+        _jcd_print_usage
         return 1
     fi
-    
+
     local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
-    
+
     # Ensure binary exists
     if [ ! -x "$jcd_binary" ]; then
         echo "Error: JCD binary not found at $jcd_binary"
@@ -439,7 +486,7 @@ _jcd_get_absolute_matches() {
     local case_insensitive="$2"  # true/false
     local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
     local matches=()
-    
+
     _jcd_debug "getting absolute matches for pattern '$pattern' (case_insensitive=$case_insensitive)"
     # Handle relative path patterns that start with ../
     if [[ "$pattern" == ../* ]]; then
@@ -526,13 +573,13 @@ _jcd_tab_complete() {
     # Parse arguments to find -i flag and determine what we're completing
     local has_i_flag=false
     local pattern_index=1
-    
+
     # Check if -i flag is present
     if [[ ${#COMP_WORDS[@]} -gt 1 ]] && [[ "${COMP_WORDS[1]}" == "-i" ]]; then
         has_i_flag=true
         pattern_index=2
     fi
-    
+
     # Only complete the pattern argument (could be at index 1 or 2 depending on -i flag)
     if [ $COMP_CWORD -ne $pattern_index ]; then
         _jcd_debug "not completing pattern argument (COMP_CWORD=$COMP_CWORD, pattern_index=$pattern_index), returning"
@@ -767,7 +814,6 @@ _jcd_tab_complete() {
             fi
         fi
     fi
-
     # Set completion mode to cycling for subsequent tabs
     _JCD_COMPLETION_MODE="cycling"
 
