@@ -7,6 +7,8 @@
 ## Features
 
 - **Tab Navigation**: Intelligent cycling through all matches with visual feedback and animated loading indicators
+- **Bidirectional Tab Cycling**: Tab cycles forward, Shift+Tab cycles backward through matches
+- **Case Sensitivity Control**: Use `-i` flag for case-insensitive matching (default is case-sensitive)
 - **First-Match Jump**: Press Enter after typing to immediately navigate to the best match
 - **Priority Matching Order**:
   1. Exact matches prioritized over partial matches
@@ -46,6 +48,9 @@ Usage:
   jcd [--shell-init [path/to/jcd]]    - Adds JCD initialization to your shell rc file (e.g. .bashrc)
   jcd [-i] <directory_pattern>        - Changes directory according to the pattern
 
+Flags:
+  -i                     - Case-insensitive matching (default: case-sensitive)
+
 directory_pattern:
   jcd <substring>        # Navigate to directory matching substring
   jcd <absolute_path>    # Navigate to absolute path
@@ -58,6 +63,9 @@ directory_pattern:
 ```bash
 # Navigate to any directory containing "proj"
 jcd proj
+
+# Case-insensitive search for directories with "PROJ", "proj", "Proj", etc.
+jcd -i proj
 
 # Find directories with "src" in the name
 jcd src
@@ -72,6 +80,21 @@ jcd /home/user/projects
 jcd projects/src    # Find 'src' within 'projects'
 ```
 
+#### Case Sensitivity Examples
+```bash
+# Default behavior is case-sensitive
+jcd Test        # Matches: Test, TestDir  (but not test, TEST)
+jcd test        # Matches: test, testdir  (but not Test, TEST)
+
+# Use -i flag for case-insensitive matching
+jcd -i test     # Matches: test, Test, TEST, TestDir, testdir, etc.
+jcd -i proj     # Matches: proj, PROJ, Project, project, etc.
+
+# Case-insensitive with tab completion
+jcd -i test<Tab>         # Cycles through all matches regardless of case
+jcd -i test<Shift+Tab>   # Cycles backward through matches
+```
+
 
 ### Advanced Tab Completion
 
@@ -83,12 +106,16 @@ $ jcd fo<Tab>
 ...  # Animated loading indicator
 jcd /.font-unix
 
-# Press Tab again to cycle to next match
+# Press Tab again to cycle forward to next match
 $ jcd /.font-unix<Tab>
 jcd /foo
 
-# Press Tab again to cycle to next match
-$ jcd /foo<Tab>
+# Press Shift+Tab to cycle backward to previous match
+$ jcd /foo<Shift+Tab>
+jcd /.font-unix
+
+# Press Tab again to cycle forward
+$ jcd /.font-unix<Tab>
 jcd /some/other/folder
 
 # Press Enter to navigate to the currently shown match
@@ -99,11 +126,13 @@ $ jcd /foo<Enter>
 #### Tab Completion Features
 
 - **Animated Loading**: Visual dots animation during search operations
-- **Inline Cycling**: Tab repeatedly to cycle through all matches
+- **Bidirectional Cycling**: Tab cycles forward, Shift+Tab cycles backward through matches
+- **Inline Cycling**: Tab repeatedly to cycle through all matches in both directions
 - **Smart Prioritization**: Exact matches shown before partial matches
 - **Proximity Sorting**: Closer directories (fewer levels away) shown first
 - **Trailing Slash Support**: Add `/` to explore subdirectories of the current match
 - **Relative Path Support**: Full tab completion for `../`, `../../`, etc.
+- **Case Sensitivity**: Works with both case-sensitive (default) and case-insensitive (`-i`) modes
 
 
 
@@ -144,7 +173,9 @@ The `jcd` tool works in two parts:
 - **Dependencies**: Standard library only (no external crates)
 - **Architecture**: Rust binary + enhanced bash wrapper function
 - **Search Depth**: Limited to 8 levels deep for performance
-- **Shell Support**: Bash (with advanced tab completion cycling and animations)
+- **Shell Support**: Bash (with bidirectional tab completion cycling and animations)
+- **Case Sensitivity**: Configurable with `-i` flag (default: case-sensitive)
+- **Tab Navigation**: Forward (Tab) and backward (Shift+Tab) cycling through matches
 - **Visual Feedback**: Animated loading indicators using ANSI escape sequences
 - **Performance**: Shell-based fast paths for common navigation patterns
 - **Relative Path Support**: Full resolution and search from resolved directories
@@ -196,6 +227,9 @@ The project includes a comprehensive test suite located in the `tests/` director
 
 # Quick validation for CI/CD
 ./tests/validate_jcd.sh
+
+# Validate Shift+Tab functionality 
+./tests/validate_shift_tab.sh
 
 # Simple functionality test
 ./tests/simple_test.sh
