@@ -8,10 +8,100 @@ use std::{
     time::{Duration, Instant},
     io::{self, Write},
 };
+use regex::Regex;
 
 // Configuration constants for performance tuning
 const MAX_MATCHES: usize = 20;           // Stop after finding enough matches
 const MAX_SEARCH_TIME_MS: u64 = 500;    // Max time to spend searching (milliseconds)
+
+/// Get ignore file paths in priority order following XDG Base Directory Specification
+fn get_ignore_file_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    
+    // 1. Project-local ignore file (highest precedence)
+    if let Ok(current_dir) = env::current_dir() {
+        paths.push(current_dir.join(".jcdignore"));
+    }
+    
+    // 2. User XDG config directory
+    let config_home = env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            env::var("HOME")
+                .map(|home| PathBuf::from(home).join(".config"))
+                .unwrap_or_else(|_| PathBuf::from(".config"))
+        });
+    paths.push(config_home.join("jcd").join("ignore"));
+    
+    // 3. Legacy dotfile for backward compatibility
+    if let Ok(home) = env::var("HOME") {
+        paths.push(PathBuf::from(home).join(".jcdignore"));
+    }
+    
+    // 4. System-wide configuration
+    paths.push(PathBuf::from("/etc/jcd/ignore"));
+    
+    paths
+}
+
+/// Parse ignore patterns from file content
+fn parse_ignore_patterns(content: &str) -> Vec<Regex> {
+    let mut patterns = Vec::new();
+    
+    for line in content.lines() {
+        let line = line.trim();
+        
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        
+        // Try to compile the regex pattern
+        match Regex::new(line) {
+            Ok(regex) => patterns.push(regex),
+            Err(e) => {
+                if is_debug_enabled() {
+                    eprintln!("DEBUG: Invalid regex pattern '{}': {}", line, e);
+                }
+                // Continue processing other patterns even if one is invalid
+            }
+        }
+    }
+    
+    patterns
+}
+
+/// Load ignore patterns from standard locations
+fn load_ignore_patterns() -> Vec<Regex> {
+    let ignore_files = get_ignore_file_paths();
+    
+    for file_path in ignore_files {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Checking ignore file: {}", file_path.display());
+        }
+        
+        if let Ok(content) = fs::read_to_string(&file_path) {
+            if is_debug_enabled() {
+                eprintln!("DEBUG: Found ignore file: {}", file_path.display());
+            }
+            let patterns = parse_ignore_patterns(&content);
+            if is_debug_enabled() {
+                eprintln!("DEBUG: Loaded {} ignore patterns", patterns.len());
+            }
+            return patterns;
+        }
+    }
+    
+    if is_debug_enabled() {
+        eprintln!("DEBUG: No ignore file found");
+    }
+    Vec::new()
+}
+
+/// Check if a directory should be ignored based on patterns
+fn should_ignore_directory(dir_name: &str, ignore_patterns: &[Regex]) -> bool {
+    ignore_patterns.iter().any(|pattern| pattern.is_match(dir_name))
+}
 
 fn is_debug_enabled() -> bool {
     env::var("JCD_DEBUG").unwrap_or_default() == "1"
@@ -202,12 +292,17 @@ fn main() {
     let mut search_term = String::new();
     let mut tab_index = 0;
     let mut quiet_mode = false;
+    let mut bypass_ignore = false; // -x flag to bypass ignore patterns
 
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
             "-i" => {
                 case_sensitive = false; // -i flag makes it case insensitive
+                i += 1;
+            }
+            "-x" => {
+                bypass_ignore = true; // -x flag bypasses ignore patterns
                 i += 1;
             }
             "--quiet" => {
@@ -245,11 +340,21 @@ fn main() {
         eprintln!("DEBUG: Searching for '{}' from {}", pattern, search_dir.display());
     }
 
+    // Load ignore patterns unless bypassed
+    let ignore_patterns = if bypass_ignore {
+        if is_debug_enabled() {
+            eprintln!("DEBUG: Bypassing ignore patterns (-x flag)");
+        }
+        Vec::new()
+    } else {
+        load_ignore_patterns()
+    };
+
     // Use threaded search with busy indicator (unless in quiet mode)
     let matches = if quiet_mode {
-        find_matching_directories(&search_dir, &pattern, case_sensitive)
+        find_matching_directories(&search_dir, &pattern, case_sensitive, &ignore_patterns)
     } else {
-        search_with_progress(&search_dir, &pattern, case_sensitive)
+        search_with_progress(&search_dir, &pattern, case_sensitive, &ignore_patterns)
     };
 
     if is_debug_enabled() {
@@ -266,9 +371,10 @@ fn main() {
     println!("{}", matches[tab_index].path.display());
 }
 
-fn search_with_progress(current_dir: &Path, search_term: &str, case_sensitive: bool) -> Vec<DirectoryMatch> {
+fn search_with_progress(current_dir: &Path, search_term: &str, case_sensitive: bool, ignore_patterns: &[Regex]) -> Vec<DirectoryMatch> {
     let current_dir = current_dir.to_path_buf();
     let search_term = search_term.to_string();
+    let ignore_patterns = ignore_patterns.to_vec(); // Clone for thread
 
     // Shared state for the search result
     let result = Arc::new(Mutex::new(None));
@@ -280,7 +386,7 @@ fn search_with_progress(current_dir: &Path, search_term: &str, case_sensitive: b
 
     // Start the search in a background thread
     let search_handle = thread::spawn(move || {
-        let matches = find_matching_directories(&current_dir, &search_term, case_sensitive);
+        let matches = find_matching_directories(&current_dir, &search_term, case_sensitive, &ignore_patterns);
 
         // Store the result
         {
@@ -355,7 +461,7 @@ fn show_busy_indicator(search_complete: &Arc<Mutex<bool>>) {
     }
 }
 
-fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensitive: bool) -> Vec<DirectoryMatch> {
+fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensitive: bool, ignore_patterns: &[Regex]) -> Vec<DirectoryMatch> {
     if is_debug_enabled() {
         eprintln!("DEBUG: find_matching_directories: current_dir={}, search_term='{}', case_sensitive={}", current_dir.display(), search_term, case_sensitive);
     }
@@ -460,14 +566,14 @@ fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensiti
     }
 
     // 1. Search up for exact matches, then partial matches (direct path to root only)
-    let up_matches = search_up_tree_with_priority(current_dir, search_term, case_sensitive);
+    let up_matches = search_up_tree_with_priority(current_dir, search_term, case_sensitive, ignore_patterns);
     if is_debug_enabled() {
         eprintln!("DEBUG: Found {} matches searching up tree", up_matches.len());
     }
     matches.extend(up_matches);
 
     // 2. Search down for all matches (exact and partial) from current directory only
-    let down_matches = search_down_breadth_first_all(current_dir, search_term, case_sensitive);
+    let down_matches = search_down_breadth_first_all(current_dir, search_term, case_sensitive, ignore_patterns);
     if is_debug_enabled() {
         eprintln!("DEBUG: Found {} matches searching down tree", down_matches.len());
     }
@@ -487,7 +593,7 @@ fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensiti
     Vec::new()
 }
 
-fn search_up_tree_with_priority(current_dir: &Path, search_term: &str, case_sensitive: bool) -> Vec<DirectoryMatch> {
+fn search_up_tree_with_priority(current_dir: &Path, search_term: &str, case_sensitive: bool, ignore_patterns: &[Regex]) -> Vec<DirectoryMatch> {
     if is_debug_enabled() {
         eprintln!("DEBUG: search_up_tree_with_priority: searching for '{}', case_sensitive={}", search_term, case_sensitive);
     }
@@ -502,6 +608,17 @@ fn search_up_tree_with_priority(current_dir: &Path, search_term: &str, case_sens
     while let Some(parent) = current.parent() {
         if let Some(name) = parent.file_name() {
             let name_str = name.to_string_lossy();
+            
+            // Check if this directory should be ignored
+            if should_ignore_directory(&name_str, ignore_patterns) {
+                if is_debug_enabled() {
+                    eprintln!("DEBUG: Ignoring parent directory: {}", name_str);
+                }
+                current = parent;
+                depth -= 1;
+                continue;
+            }
+            
             let (name_compare, search_compare) = if case_sensitive {
                 (name_str.to_string(), search_term.to_string())
             } else {
@@ -546,7 +663,7 @@ fn search_up_tree_with_priority(current_dir: &Path, search_term: &str, case_sens
     result
 }
 
-fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sensitive: bool) -> Vec<DirectoryMatch> {
+fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sensitive: bool, ignore_patterns: &[Regex]) -> Vec<DirectoryMatch> {
     if is_debug_enabled() {
         eprintln!("DEBUG: search_down_breadth_first_all: searching for '{}', case_sensitive={}", search_term, case_sensitive);
     }
@@ -577,6 +694,15 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
                     let path = entry.path();
                     if let Some(name) = path.file_name() {
                         let name_str = name.to_string_lossy();
+                        
+                        // Check if this directory should be ignored
+                        if should_ignore_directory(&name_str, ignore_patterns) {
+                            if is_debug_enabled() {
+                                eprintln!("DEBUG: Ignoring directory: {}", name_str);
+                            }
+                            continue;
+                        }
+                        
                         let (name_compare, search_compare) = if case_sensitive {
                             (name_str.to_string(), search_term.to_string())
                         } else {
@@ -664,6 +790,15 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
                         let path = entry.path();
                         if let Some(name) = path.file_name() {
                             let name_str = name.to_string_lossy();
+                            
+                            // Check if this directory should be ignored
+                            if should_ignore_directory(&name_str, ignore_patterns) {
+                                if is_debug_enabled() {
+                                    eprintln!("DEBUG: Ignoring directory at depth {}: {}", depth + 1, name_str);
+                                }
+                                continue;
+                            }
+                            
                             let (name_compare, search_compare) = if case_sensitive {
                                 (name_str.to_string(), search_term.to_string())
                             } else {

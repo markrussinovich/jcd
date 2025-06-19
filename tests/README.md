@@ -39,6 +39,19 @@ Usage:
 python3 tests/verify_basic_functionality.py
 ```
 
+### `test_ignore_functionality.sh`
+**Comprehensive ignore pattern test suite**
+- Tests all ignore file locations and precedence rules
+- Validates regex pattern matching and bypassing with `-x` flag
+- Tests project-local, user config, legacy, and system-wide ignore files
+- Verifies complex regex patterns and error handling
+- Comprehensive coverage of the ignore feature
+
+Usage:
+```bash
+./tests/test_ignore_functionality.sh
+```
+
 ### `test_case_sensitivity.sh`
 **Standalone case sensitivity test**
 - Dedicated test for the new `-i` flag functionality

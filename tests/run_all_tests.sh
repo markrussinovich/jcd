@@ -74,6 +74,7 @@ echo
 # Core functionality tests
 run_test "Simple Functionality Test" "./simple_test.sh"
 run_test "Comprehensive Relative Path Test" "./test_relative_comprehensive.sh"
+run_test "Ignore Functionality Test" "./test_ignore_functionality.sh"
 run_test "Validation Test" "./validate_jcd.sh"
 
 # Regression and bug fix tests
