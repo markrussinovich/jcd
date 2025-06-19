@@ -143,6 +143,7 @@ _JCD_COMPLETION_MODE=""  # "initial", "cycling", "leaf"
 _JCD_LAST_COMPLETION=""
 _JCD_IS_LEAF_DIR=false
 _JCD_LEAF_COMPLETION_COUNT=0
+_JCD_CYCLING_DIRECTION=1  # 1 for forward, -1 for backward
 
 # Debug flag - set to 1 to enable debug output
 _JCD_DEBUG="${JCD_DEBUG:-0}"
@@ -158,6 +159,7 @@ _jcd_reset_state() {
     _JCD_LAST_COMPLETION=""
     _JCD_IS_LEAF_DIR=false
     _JCD_LEAF_COMPLETION_COUNT=0
+    _JCD_CYCLING_DIRECTION=1
 }
 
 # Determine if the current input represents a fresh search vs continuation of cycling
@@ -562,6 +564,18 @@ _jcd_find_current_index() {
 
 # Inline tab completion cycling for jcd
 _jcd_tab_complete() {
+    _JCD_CYCLING_DIRECTION=1  # Forward direction
+    _jcd_tab_complete_internal
+}
+
+# Backward tab completion for Shift+Tab
+_jcd_backward_tab_complete() {
+    _JCD_CYCLING_DIRECTION=-1  # Backward direction
+    _jcd_tab_complete_internal
+}
+
+# Internal tab completion function that handles both directions
+_jcd_tab_complete_internal() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
 
@@ -632,7 +646,11 @@ _jcd_tab_complete() {
                         fi
                     done
                     # Advance to next match
-                    _JCD_CURRENT_INDEX=$(( (_JCD_CURRENT_INDEX + 1) % ${#_JCD_CURRENT_MATCHES[@]} ))
+                    if [[ "$_JCD_CYCLING_DIRECTION" -eq 1 ]]; then
+                        _JCD_CURRENT_INDEX=$(( (_JCD_CURRENT_INDEX + 1) % ${#_JCD_CURRENT_MATCHES[@]} ))
+                    else
+                        _JCD_CURRENT_INDEX=$(( (_JCD_CURRENT_INDEX - 1 + ${#_JCD_CURRENT_MATCHES[@]}) % ${#_JCD_CURRENT_MATCHES[@]} ))
+                    fi
                     COMPREPLY=("${_JCD_CURRENT_MATCHES[$_JCD_CURRENT_INDEX]}")
                     return 0
                 fi
@@ -786,19 +804,27 @@ _jcd_tab_complete() {
 
     # Handle cycling through multiple matches
     if [[ "$_JCD_COMPLETION_MODE" == "cycling" ]]; then
-        # Already cycling - advance to next match
-        _JCD_CURRENT_INDEX=$(( (_JCD_CURRENT_INDEX + 1) % ${#_JCD_CURRENT_MATCHES[@]} ))
-        _jcd_debug "already cycling, advanced to index $_JCD_CURRENT_INDEX"
+        # Already cycling - advance in the current direction
+        if [[ "$_JCD_CYCLING_DIRECTION" -eq 1 ]]; then
+            _JCD_CURRENT_INDEX=$(( (_JCD_CURRENT_INDEX + 1) % ${#_JCD_CURRENT_MATCHES[@]} ))
+        else
+            _JCD_CURRENT_INDEX=$(( (_JCD_CURRENT_INDEX - 1 + ${#_JCD_CURRENT_MATCHES[@]}) % ${#_JCD_CURRENT_MATCHES[@]} ))
+        fi
+        _jcd_debug "already cycling, advanced to index $_JCD_CURRENT_INDEX (direction=$_JCD_CYCLING_DIRECTION)"
     else
         # Check if current input matches one of our results
         local current_idx
         current_idx=$(_jcd_find_current_index "$cur")
 
         if [[ $current_idx -ge 0 ]]; then
-            # Current input matches a result - start cycling from next
-            _JCD_CURRENT_INDEX=$(( (current_idx + 1) % ${#_JCD_CURRENT_MATCHES[@]} ))
+            # Current input matches a result - start cycling from next/previous
+            if [[ "$_JCD_CYCLING_DIRECTION" -eq 1 ]]; then
+                _JCD_CURRENT_INDEX=$(( (current_idx + 1) % ${#_JCD_CURRENT_MATCHES[@]} ))
+            else
+                _JCD_CURRENT_INDEX=$(( (current_idx - 1 + ${#_JCD_CURRENT_MATCHES[@]}) % ${#_JCD_CURRENT_MATCHES[@]} ))
+            fi
             _JCD_COMPLETION_MODE="cycling"
-            _jcd_debug "current input matches result #$current_idx, cycling to index $_JCD_CURRENT_INDEX"
+            _jcd_debug "current input matches result #$current_idx, cycling to index $_JCD_CURRENT_INDEX (direction=$_JCD_CYCLING_DIRECTION)"
         else
             # Special case: if we're in subdirectory expansion mode (original pattern ended with /)
             # and current input is the original pattern, start with first match
@@ -835,8 +861,58 @@ _jcd_clear_on_execute() {
     fi
 }
 
+# Function to handle Shift+Tab key press for backward cycling
+_jcd_shift_tab_handler() {
+    local line="$READLINE_LINE"
+    local point="$READLINE_POINT"
+    
+    # Check if we're at the end of a jcd command
+    if [[ "$line" =~ ^jcd[[:space:]]+((-i[[:space:]]+)?[^[:space:]]*)?$ ]]; then
+        # Extract the current word being completed
+        local words
+        read -ra words <<< "$line"
+        local cur=""
+        
+        # Determine what we're completing
+        if [[ ${#words[@]} -gt 1 ]]; then
+            if [[ "${words[1]}" == "-i" ]] && [[ ${#words[@]} -gt 2 ]]; then
+                cur="${words[2]}"
+            elif [[ "${words[1]}" != "-i" ]]; then
+                cur="${words[1]}"
+            fi
+        fi
+        
+        # Set up COMP_WORDS and COMP_CWORD for the completion function
+        COMP_WORDS=("${words[@]}")
+        if [[ "${words[1]}" == "-i" ]]; then
+            COMP_CWORD=2
+        else
+            COMP_CWORD=1
+        fi
+        
+        # Call backward tab completion
+        _jcd_backward_tab_complete
+        
+        # Replace the current line with the completion
+        if [[ ${#COMPREPLY[@]} -gt 0 ]]; then
+            local completion="${COMPREPLY[0]}"
+            if [[ "${words[1]}" == "-i" ]]; then
+                READLINE_LINE="jcd -i $completion"
+            else
+                READLINE_LINE="jcd $completion"
+            fi
+            READLINE_POINT=${#READLINE_LINE}
+        fi
+    fi
+}
+
 # Register the completion function
 complete -o nospace -F _jcd_tab_complete jcd
+
+# Bind Shift+Tab to backward completion for jcd (only in interactive shells)
+if [[ $- == *i* ]]; then
+    bind -x '"\e[Z": _jcd_shift_tab_handler'
+fi
 
 # Hook to clear state when command is executed (but not during completion)
 trap '_jcd_clear_on_execute' DEBUG

@@ -12,7 +12,7 @@ from pathlib import Path
 
 def run_jcd(pattern, index=0, cwd=None, case_sensitive=True):
     """Run the jcd binary and return the result."""
-    cmd = ['/datadrive/jcd/target/debug/jcd']
+    cmd = ['/datadrive/jcd/target/release/jcd']
     if not case_sensitive:  # Add -i flag for case insensitive
         cmd.append('-i')
     cmd.extend([pattern, str(index)])
@@ -166,7 +166,7 @@ def test_case_sensitivity():
 
 def test_binary_exists():
     """Test that the binary exists and is executable."""
-    binary_path = Path("/datadrive/jcd/target/debug/jcd")
+    binary_path = Path("/datadrive/jcd/target/release/jcd")
     if binary_path.exists() and os.access(binary_path, os.X_OK):
         print(f"✓ Binary exists and is executable: {binary_path}")
         return True

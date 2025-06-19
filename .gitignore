@@ -2,3 +2,7 @@
 # Test artifacts
 /tmp/jcd_test/
 *.tmp
+
+# Debug and experimental test files
+tests/debug_tab_test.sh
+tests/test_tab_completion.sh
