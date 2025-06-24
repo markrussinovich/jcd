@@ -22,9 +22,21 @@ jcd() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             --shell-init)
-                local BASHRC="$HOME/.bashrc"
+                # Detect shell and pick appropriate rc file
+                local RC_FILE
+                if [[ -n "$ZSH_VERSION" ]] || [[ "${SHELL:-}" =~ zsh$ ]]; then
+                    RC_FILE="$HOME/.zshrc"
+                else
+                    RC_FILE="$HOME/.bashrc"
+                fi
                 local JCD_FUNC_PATH
-                JCD_FUNC_PATH="$(realpath "${BASH_SOURCE[0]}")"
+                if [[ -n "$ZSH_VERSION" ]]; then
+                    JCD_FUNC_PATH="$(realpath "${(%):-%N}")"
+                elif [[ -n "$BASH_SOURCE" ]]; then
+                    JCD_FUNC_PATH="$(realpath "${BASH_SOURCE[0]}")"
+                else
+                    JCD_FUNC_PATH="$(realpath "$0")"
+                fi
 
                 local JCD_PATH
                 if [[ -n "$2" && ! "$2" =~ ^- ]]; then
@@ -41,20 +53,20 @@ jcd() {
                 local SOURCE_LINE="source $JCD_FUNC_PATH"
 
                 # Update or append export line
-                if grep -q '^export JCD_BINARY=' "$BASHRC"; then
-                    sed -i "s|^export JCD_BINARY=.*|$EXPORT_LINE|" "$BASHRC"
+                if grep -q '^export JCD_BINARY=' "$RC_FILE"; then
+                    sed -i "s|^export JCD_BINARY=.*|$EXPORT_LINE|" "$RC_FILE"
                 else
-                    echo "$EXPORT_LINE" >> "$BASHRC"
+                    echo "$EXPORT_LINE" >> "$RC_FILE"
                 fi
 
                 # Update or append source line
-                if grep -q '^source .*/jcd_function.sh' "$BASHRC"; then
-                    sed -i "s|^source .*/jcd_function.sh.*|$SOURCE_LINE|" "$BASHRC"
+                if grep -q '^source .*/jcd_function.sh' "$RC_FILE"; then
+                    sed -i "s|^source .*/jcd_function.sh.*|$SOURCE_LINE|" "$RC_FILE"
                 else
-                    echo "$SOURCE_LINE" >> "$BASHRC"
+                    echo "$SOURCE_LINE" >> "$RC_FILE"
                 fi
 
-                echo "JCD: .bashrc updated. Please run 'source ~/.bashrc' or open a new terminal to activate."
+                echo "JCD: $(basename "$RC_FILE") updated. Please run 'source $RC_FILE' or open a new terminal to activate."
                 return 0
                 ;;
             -i)
@@ -222,7 +234,7 @@ _jcd_should_reset_state() {
     fi
 
     # Check if current input is one of our cached matches - if so, continue cycling
-    for i in "${!_JCD_CURRENT_MATCHES[@]}"; do
+    for ((i=0; i<=${#_JCD_CURRENT_MATCHES[@]}; i++)); do
         local match="${_JCD_CURRENT_MATCHES[i]}"
         if [[ "$match" == "$cur" ]]; then
             # Special case: if we're in leaf mode and this is the leaf directory,
@@ -496,7 +508,10 @@ _jcd_get_absolute_matches() {
         local match_output
         match_output=$(_jcd_get_relative_matches "$pattern" "$case_insensitive")
         if [[ -n "$match_output" ]]; then
-            readarray -t matches <<<"$match_output"
+            matches=()
+            while IFS= read -r line; do
+                matches+=("$line")
+            done <<<"$match_output"
         fi
         _jcd_debug "found ${#matches[@]} matches via relative logic"
         if [ ${#matches[@]} -eq 0 ]; then
@@ -576,14 +591,6 @@ _jcd_backward_tab_complete() {
 
 # Internal tab completion function that handles both directions
 _jcd_tab_complete_internal() {
-    local cur="${COMP_WORDS[COMP_CWORD]}"
-    local prev="${COMP_WORDS[COMP_CWORD-1]}"
-
-    _jcd_debug ""
-    _jcd_debug "=== TAB COMPLETION CALLED ==="
-    _jcd_debug "cur='$cur' prev='$prev' COMP_CWORD=$COMP_CWORD"
-    _jcd_debug "full command: ${COMP_WORDS[*]}"
-
     # Parse arguments to find -i flag and determine what we're completing
     local has_i_flag=false
     local pattern_index=1
@@ -593,6 +600,14 @@ _jcd_tab_complete_internal() {
         has_i_flag=true
         pattern_index=2
     fi
+
+    local cur="${COMP_WORDS[@]:${pattern_index}:${COMP_CWORD}}"
+    local prev="${COMP_WORDS[@]:${pattern_index}:${COMP_CWORD}}"
+
+    _jcd_debug ""
+    _jcd_debug "=== TAB COMPLETION CALLED ==="
+    _jcd_debug "cur='$cur' prev='$prev' COMP_CWORD=$COMP_CWORD pattern_index=$pattern_index"
+    _jcd_debug "full command: ${COMP_WORDS[*]}"
 
     # Only complete the pattern argument (could be at index 1 or 2 depending on -i flag)
     if [ $COMP_CWORD -ne $pattern_index ]; then
@@ -632,7 +647,10 @@ _jcd_tab_complete_internal() {
                 local match_output
                 match_output=$(_jcd_get_absolute_matches "$parent_dir/" "false")
                 if [[ -n "$match_output" ]]; then
-                    readarray -t _JCD_CURRENT_MATCHES <<<"$match_output"
+                    _JCD_CURRENT_MATCHES=()
+                    while IFS= read -r line; do
+                        _JCD_CURRENT_MATCHES+=("$line")
+                    done <<<"$match_output"
                     _JCD_COMPLETION_MODE="cycling"
                     _JCD_CURRENT_INDEX=0
                     _jcd_debug "reset to parent directory cycling with ${#_JCD_CURRENT_MATCHES[@]} matches"
@@ -679,7 +697,10 @@ _jcd_tab_complete_internal() {
             match_output=$(_jcd_run_with_animation _jcd_get_absolute_matches "$cur" "$has_i_flag")
             _jcd_debug "raw match output: '$match_output'"
             if [[ -n "$match_output" ]]; then
-                readarray -t _JCD_CURRENT_MATCHES <<<"$match_output"
+                _JCD_CURRENT_MATCHES=()
+                while IFS= read -r line; do
+                    _JCD_CURRENT_MATCHES+=("$line")
+                done <<<"$match_output"
             else
                 _JCD_CURRENT_MATCHES=()
                 _jcd_debug "explicitly set empty array for empty match output"
@@ -693,7 +714,10 @@ _jcd_tab_complete_internal() {
             match_output=$(_jcd_run_with_animation _jcd_get_relative_matches "$cur" "$has_i_flag")
             _jcd_debug "raw match output: '$match_output'"
             if [[ -n "$match_output" ]]; then
-                readarray -t _JCD_CURRENT_MATCHES <<<"$match_output"
+                _JCD_CURRENT_MATCHES=()
+                while IFS= read -r line; do
+                    _JCD_CURRENT_MATCHES+=("$line")
+                done <<<"$match_output"
             else
                 _JCD_CURRENT_MATCHES=()
                 _jcd_debug "explicitly set empty array for empty match output"
@@ -707,7 +731,10 @@ _jcd_tab_complete_internal() {
             match_output=$(_jcd_run_with_animation _jcd_get_relative_matches "$cur" "$has_i_flag")
             _jcd_debug "raw match output: '$match_output'"
             if [[ -n "$match_output" ]]; then
-                readarray -t _JCD_CURRENT_MATCHES <<<"$match_output"
+                _JCD_CURRENT_MATCHES=()
+                while IFS= read -r line; do
+                    _JCD_CURRENT_MATCHES+=("$line")
+                done <<<"$match_output"
             else
                 _JCD_CURRENT_MATCHES=()
                 _jcd_debug "explicitly set empty array for empty match output"
@@ -865,14 +892,14 @@ _jcd_clear_on_execute() {
 _jcd_shift_tab_handler() {
     local line="$READLINE_LINE"
     local point="$READLINE_POINT"
-    
+
     # Check if we're at the end of a jcd command
     if [[ "$line" =~ ^jcd[[:space:]]+((-i[[:space:]]+)?[^[:space:]]*)?$ ]]; then
         # Extract the current word being completed
         local words
         read -ra words <<< "$line"
         local cur=""
-        
+
         # Determine what we're completing
         if [[ ${#words[@]} -gt 1 ]]; then
             if [[ "${words[1]}" == "-i" ]] && [[ ${#words[@]} -gt 2 ]]; then
@@ -881,7 +908,7 @@ _jcd_shift_tab_handler() {
                 cur="${words[1]}"
             fi
         fi
-        
+
         # Set up COMP_WORDS and COMP_CWORD for the completion function
         COMP_WORDS=("${words[@]}")
         if [[ "${words[1]}" == "-i" ]]; then
@@ -889,10 +916,10 @@ _jcd_shift_tab_handler() {
         else
             COMP_CWORD=1
         fi
-        
+
         # Call backward tab completion
         _jcd_backward_tab_complete
-        
+
         # Replace the current line with the completion
         if [[ ${#COMPREPLY[@]} -gt 0 ]]; then
             local completion="${COMPREPLY[0]}"
@@ -906,21 +933,108 @@ _jcd_shift_tab_handler() {
     fi
 }
 
-# Register the completion function
-complete -o nospace -F _jcd_tab_complete jcd
+if [[ -n "${BASH_VERSION:-}" ]]; then
+    # Register the completion function
+    complete -o nospace -F _jcd_tab_complete jcd
 
-# Bind Shift+Tab to backward completion for jcd (only in interactive shells)
-if [[ $- == *i* ]]; then
-    bind -x '"\e[Z": _jcd_shift_tab_handler'
+    # Bind Shift+Tab to backward completion for jcd (only in interactive shells)
+    if [[ $- == *i* ]]; then
+        bind -x '"\e[Z": _jcd_shift_tab_handler'
+    fi
+
+    # Hook to clear state when command is executed (but not during completion)
+    trap '_jcd_clear_on_execute' DEBUG
+
+    # Export the function
+    export -f jcd
+
+    # Clear any existing state when script is loaded to ensure clean start
+    _jcd_reset_state
+
+    echo "JCD completion loaded for bash. Set JCD_DEBUG=1 to enable debug output." >&2
+elif [[ -n "${ZSH_VERSION:-}" ]]; then
+    # We're in zsh - set up zsh completion
+    autoload -U compinit
+    compinit
+
+    # Zsh completion function
+    _jcd_zsh_complete() {
+
+        local state line
+        _arguments \
+            '(-i)--case-insensitive[Case insensitive search]' \
+            '*:directory pattern:->pattern'
+
+        setopt KSH_ARRAYS
+
+        case $state in
+            pattern)
+                # Get completions using our existing bash logic
+                local cur="${words[CURRENT]}"
+                local has_i_flag=false
+
+                # Check for -i flag
+                if [[ "${words[*]}" == *" -i "* ]]; then
+                    has_i_flag=true
+                fi
+
+                # Use our existing completion logic
+                typeset -a COMP_WORDS
+                for ((i=1; i<=$#words-1; i++)); do
+                    COMP_WORDS[i-1]="${words[i]}"
+                done
+
+                # If the command name is missing (e.g., COMP_WORDS[0] is the pattern), insert it
+                if [[ "${COMP_WORDS[0]}" != "jcd" ]]; then
+                    COMP_WORDS=("jcd" "${COMP_WORDS[@]}")
+                fi
+
+                for i in {0..$#COMP_WORDS}; do
+                    _jcd_debug "COMP_WORDS[$i]='${COMP_WORDS[$i]}'"
+                done
+
+                local COMP_CWORD=$((CURRENT - 1))
+                local COMPREPLY=()
+
+                _jcd_tab_complete
+
+                local filtered=()
+                for item in "${COMPREPLY[@]}"; do
+                    [[ -n "$item" ]] && filtered+=("$item")
+                done
+                COMPREPLY=("${filtered[@]}")
+
+                _jcd_debug "COMPREPLY after completion: [${COMPREPLY[*]}]"
+
+                for i in {0..$#_JCD_CURRENT_MATCHES}; do
+                    _jcd_debug "_JCD_CURRENT_MATCHES[$i]='${_JCD_CURRENT_MATCHES[$i]}'"
+                done
+
+                # Convert bash COMPREPLY to zsh format
+                if [[ ${#COMPREPLY[@]} -gt 0 ]]; then
+                    compadd -U -S '' -- "${COMPREPLY[@]}"
+                fi
+                return
+                ;;
+        esac
+    }
+
+    # Register zsh completion
+    compdef _jcd_zsh_complete jcd
+
+    # In zsh, use preexec hook instead of DEBUG trap for better compatibility
+    autoload -Uz add-zsh-hook
+    _jcd_zsh_preexec() {
+        # Clear state when executing any command that's not jcd-related
+        if [[ "$1" != *"jcd "* ]] && [[ "$1" != *"_jcd_"* ]] && [[ -n "$1" ]]; then
+            _jcd_debug "clearing state on zsh command execute: '$1'"
+            _jcd_reset_state
+        fi
+    }
+    add-zsh-hook preexec _jcd_zsh_preexec
+
+    echo "JCD completion loaded for zsh. Set JCD_DEBUG=1 to enable debug output." >&2
+else
+    echo "Warning: JCD completion is only supported in bash and zsh. Current shell: ${SHELL:-unknown}" >&2
+    echo "The jcd function will work, but tab completion will not be available." >&2
 fi
-
-# Hook to clear state when command is executed (but not during completion)
-trap '_jcd_clear_on_execute' DEBUG
-
-# Export the function
-export -f jcd
-
-# Clear any existing state when script is loaded to ensure clean start
-_jcd_reset_state
-
-echo "JCD completion loaded. Set JCD_DEBUG=1 to enable debug output." >&2
