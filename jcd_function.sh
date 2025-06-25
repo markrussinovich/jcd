@@ -466,7 +466,13 @@ _jcd_get_relative_matches() {
                     fi
                     if [[ "$(uname)" == "Darwin" ]]; then
                         # BSD find/sort (macOS)
+                        _jcd_debug "find_cmd: $find_cmd"
+                        _jcd_debug "resolved_dir: $resolved_dir"
+                        _jcd_debug "search_part: $search_part"
+                        _jcd_debug "find command: $find_cmd \"$resolved_dir\" -maxdepth 1 -type d ! -path \"$resolved_dir\" 2>/dev/null | sort"
+                        $find_cmd "$resolved_dir" -maxdepth 1 -type d ! -path "$resolved_dir" 2>/dev/null | sort >&2
                         while IFS= read -r dir; do
+                            _jcd_debug "  find result: $dir"
                             if [[ -d "$dir" ]]; then
                                 local dir_name="$(basename "$dir")"
                                 if [[ "$dir_name" == *"$search_part"* ]]; then
@@ -474,6 +480,7 @@ _jcd_get_relative_matches() {
                                     _jcd_debug "    found relative pattern match: '$dir'"
                                 fi
                             fi
+
                         done < <($find_cmd "$resolved_dir" -maxdepth 1 -type d ! -path "$resolved_dir" 2>/dev/null | sort)
                     else
                         # GNU find/sort (Linux)
