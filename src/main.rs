@@ -1,28 +1,29 @@
+use regex::{Regex, RegexBuilder};
 use std::{
-    env,
-    fs,
+    env, fs,
+    io::{self, Write},
     path::{Path, PathBuf},
     process,
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
-    io::{self, Write},
 };
-use regex::Regex;
 
 // Configuration constants for performance tuning
-const MAX_MATCHES: usize = 20;           // Stop after finding enough matches
-const MAX_SEARCH_TIME_MS: u64 = 500;    // Max time to spend searching (milliseconds)
+const MAX_MATCHES: usize = 20; // Stop after finding enough matches
+const MAX_SEARCH_TIME_MS: u64 = 500; // Max time to spend searching (milliseconds)
+const MAX_IGNORE_PATTERNS: usize = 100; // Upper bound on loaded ignore patterns
+const MAX_COMPILED_REGEX_SIZE: usize = 1_000_000; // 1MB compiled regex size limit
 
 /// Get ignore file paths in priority order following XDG Base Directory Specification
 fn get_ignore_file_paths() -> Vec<PathBuf> {
     let mut paths = Vec::new();
-    
+
     // 1. Project-local ignore file (highest precedence)
     if let Ok(current_dir) = env::current_dir() {
         paths.push(current_dir.join(".jcdignore"));
     }
-    
+
     // 2. User XDG config directory
     let config_home = env::var("XDG_CONFIG_HOME")
         .map(PathBuf::from)
@@ -32,33 +33,45 @@ fn get_ignore_file_paths() -> Vec<PathBuf> {
                 .unwrap_or_else(|_| PathBuf::from(".config"))
         });
     paths.push(config_home.join("jcd").join("ignore"));
-    
+
     // 3. Legacy dotfile for backward compatibility
     if let Ok(home) = env::var("HOME") {
         paths.push(PathBuf::from(home).join(".jcdignore"));
     }
-    
+
     // 4. System-wide configuration
     paths.push(PathBuf::from("/etc/jcd/ignore"));
-    
+
     paths
 }
 
 /// Parse ignore patterns from file content
 fn parse_ignore_patterns(content: &str) -> Vec<Regex> {
     let mut patterns = Vec::new();
-    
+
     for line in content.lines() {
         let line = line.trim();
-        
+
         // Skip empty lines and comments
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        
+
         // Try to compile the regex pattern
-        match Regex::new(line) {
-            Ok(regex) => patterns.push(regex),
+        match RegexBuilder::new(line)
+            .size_limit(MAX_COMPILED_REGEX_SIZE)
+            .build()
+        {
+            Ok(regex) => {
+                if patterns.len() < MAX_IGNORE_PATTERNS {
+                    patterns.push(regex);
+                } else if is_debug_enabled() {
+                    eprintln!(
+                        "DEBUG: Ignored pattern due to max pattern count (100): '{}'",
+                        line
+                    );
+                }
+            }
             Err(e) => {
                 if is_debug_enabled() {
                     eprintln!("DEBUG: Invalid regex pattern '{}': {}", line, e);
@@ -67,19 +80,19 @@ fn parse_ignore_patterns(content: &str) -> Vec<Regex> {
             }
         }
     }
-    
+
     patterns
 }
 
 /// Load ignore patterns from standard locations
 fn load_ignore_patterns() -> Vec<Regex> {
     let ignore_files = get_ignore_file_paths();
-    
+
     for file_path in ignore_files {
         if is_debug_enabled() {
             eprintln!("DEBUG: Checking ignore file: {}", file_path.display());
         }
-        
+
         if let Ok(content) = fs::read_to_string(&file_path) {
             if is_debug_enabled() {
                 eprintln!("DEBUG: Found ignore file: {}", file_path.display());
@@ -91,7 +104,7 @@ fn load_ignore_patterns() -> Vec<Regex> {
             return patterns;
         }
     }
-    
+
     if is_debug_enabled() {
         eprintln!("DEBUG: No ignore file found");
     }
@@ -100,7 +113,9 @@ fn load_ignore_patterns() -> Vec<Regex> {
 
 /// Check if a directory should be ignored based on patterns
 fn should_ignore_directory(dir_name: &str, ignore_patterns: &[Regex]) -> bool {
-    ignore_patterns.iter().any(|pattern| pattern.is_match(dir_name))
+    ignore_patterns
+        .iter()
+        .any(|pattern| pattern.is_match(dir_name))
 }
 
 fn is_debug_enabled() -> bool {
@@ -155,7 +170,11 @@ impl SearchContext {
 /// and pattern is the remaining search term after resolving relative components.
 fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, String) {
     if is_debug_enabled() {
-        eprintln!("DEBUG: resolve_search_context: current_dir={}, search_term='{}'", current_dir.display(), search_term);
+        eprintln!(
+            "DEBUG: resolve_search_context: current_dir={}, search_term='{}'",
+            current_dir.display(),
+            search_term
+        );
     }
 
     // Handle empty search term
@@ -202,14 +221,21 @@ fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, St
             match component {
                 std::path::Component::CurDir => {
                     if is_debug_enabled() {
-                        eprintln!("DEBUG: Current dir component, staying in {}", resolved_dir.display());
+                        eprintln!(
+                            "DEBUG: Current dir component, staying in {}",
+                            resolved_dir.display()
+                        );
                     }
                     continue;
                 }
                 std::path::Component::ParentDir => {
                     if let Some(parent) = resolved_dir.parent() {
                         if is_debug_enabled() {
-                            eprintln!("DEBUG: Parent dir component, moving from {} to {}", resolved_dir.display(), parent.display());
+                            eprintln!(
+                                "DEBUG: Parent dir component, moving from {} to {}",
+                                resolved_dir.display(),
+                                parent.display()
+                            );
                         }
                         resolved_dir = parent.to_path_buf();
                     }
@@ -217,7 +243,10 @@ fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, St
                 std::path::Component::Normal(name) => {
                     remaining_pattern = name.to_string_lossy().to_string();
                     if is_debug_enabled() {
-                        eprintln!("DEBUG: Found search pattern '{}' in relative path", remaining_pattern);
+                        eprintln!(
+                            "DEBUG: Found search pattern '{}' in relative path",
+                            remaining_pattern
+                        );
                     }
                     break;
                 }
@@ -231,7 +260,11 @@ fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, St
         }
 
         if is_debug_enabled() {
-            eprintln!("DEBUG: Resolved relative path: search_dir={}, pattern='{}'", resolved_dir.display(), remaining_pattern);
+            eprintln!(
+                "DEBUG: Resolved relative path: search_dir={}, pattern='{}'",
+                resolved_dir.display(),
+                remaining_pattern
+            );
         }
         return (resolved_dir, remaining_pattern);
     }
@@ -250,7 +283,11 @@ fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, St
                 std::path::Component::ParentDir => {
                     if let Some(parent) = resolved_dir.parent() {
                         if is_debug_enabled() {
-                            eprintln!("DEBUG: Moving up from {} to {}", resolved_dir.display(), parent.display());
+                            eprintln!(
+                                "DEBUG: Moving up from {} to {}",
+                                resolved_dir.display(),
+                                parent.display()
+                            );
                         }
                         resolved_dir = parent.to_path_buf();
                     }
@@ -267,14 +304,20 @@ fn resolve_search_context(current_dir: &Path, search_term: &str) -> (PathBuf, St
         }
 
         if is_debug_enabled() {
-            eprintln!("DEBUG: Final resolved directory: {}", resolved_dir.display());
+            eprintln!(
+                "DEBUG: Final resolved directory: {}",
+                resolved_dir.display()
+            );
         }
         return (resolved_dir, String::new());
     }
 
     // For absolute paths and regular patterns, use the original behavior
     if is_debug_enabled() {
-        eprintln!("DEBUG: Using current directory for search with pattern '{}'", search_term);
+        eprintln!(
+            "DEBUG: Using current directory for search with pattern '{}'",
+            search_term
+        );
     }
     (current_dir.to_path_buf(), search_term.to_string())
 }
@@ -337,7 +380,11 @@ fn main() {
     let (search_dir, pattern) = resolve_search_context(&current_dir, &search_term);
 
     if is_debug_enabled() {
-        eprintln!("DEBUG: Searching for '{}' from {}", pattern, search_dir.display());
+        eprintln!(
+            "DEBUG: Searching for '{}' from {}",
+            pattern,
+            search_dir.display()
+        );
     }
 
     // Load ignore patterns unless bypassed
@@ -371,7 +418,12 @@ fn main() {
     println!("{}", matches[tab_index].path.display());
 }
 
-fn search_with_progress(current_dir: &Path, search_term: &str, case_sensitive: bool, ignore_patterns: &[Regex]) -> Vec<DirectoryMatch> {
+fn search_with_progress(
+    current_dir: &Path,
+    search_term: &str,
+    case_sensitive: bool,
+    ignore_patterns: &[Regex],
+) -> Vec<DirectoryMatch> {
     let current_dir = current_dir.to_path_buf();
     let search_term = search_term.to_string();
     let ignore_patterns = ignore_patterns.to_vec(); // Clone for thread
@@ -386,7 +438,8 @@ fn search_with_progress(current_dir: &Path, search_term: &str, case_sensitive: b
 
     // Start the search in a background thread
     let search_handle = thread::spawn(move || {
-        let matches = find_matching_directories(&current_dir, &search_term, case_sensitive, &ignore_patterns);
+        let matches =
+            find_matching_directories(&current_dir, &search_term, case_sensitive, &ignore_patterns);
 
         // Store the result
         {
@@ -424,8 +477,8 @@ fn search_with_progress(current_dir: &Path, search_term: &str, case_sensitive: b
         indicator_handle.join().unwrap();
 
         // Clear the progress line
-            eprint!("\r\x1b[K");
-            io::stderr().flush().unwrap();
+        eprint!("\r\x1b[K");
+        io::stderr().flush().unwrap();
     } else {
         // Search completed quickly, just wait for it
         search_handle.join().unwrap();
@@ -461,9 +514,19 @@ fn show_busy_indicator(search_complete: &Arc<Mutex<bool>>) {
     }
 }
 
-fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensitive: bool, ignore_patterns: &[Regex]) -> Vec<DirectoryMatch> {
+fn find_matching_directories(
+    current_dir: &Path,
+    search_term: &str,
+    case_sensitive: bool,
+    ignore_patterns: &[Regex],
+) -> Vec<DirectoryMatch> {
     if is_debug_enabled() {
-        eprintln!("DEBUG: find_matching_directories: current_dir={}, search_term='{}', case_sensitive={}", current_dir.display(), search_term, case_sensitive);
+        eprintln!(
+            "DEBUG: find_matching_directories: current_dir={}, search_term='{}', case_sensitive={}",
+            current_dir.display(),
+            search_term,
+            case_sensitive
+        );
     }
 
     let mut matches = Vec::new();
@@ -492,14 +555,18 @@ fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensiti
             if is_debug_enabled() {
                 eprintln!("DEBUG: Absolute path ends with slash - exploring subdirectories");
             }
-            let dir_path = Path::new(&search_term[..search_term.len()-1]);
+            let dir_path = Path::new(&search_term[..search_term.len() - 1]);
             if dir_path.exists() && dir_path.is_dir() {
                 let mut subdir_matches = Vec::new();
                 search_absolute_pattern(dir_path, "", &mut subdir_matches, case_sensitive);
 
                 if !subdir_matches.is_empty() {
                     if is_debug_enabled() {
-                        eprintln!("DEBUG: Found {} subdirectories in {}", subdir_matches.len(), dir_path.display());
+                        eprintln!(
+                            "DEBUG: Found {} subdirectories in {}",
+                            subdir_matches.len(),
+                            dir_path.display()
+                        );
                     }
                     matches.extend(subdir_matches);
                 } else {
@@ -516,8 +583,9 @@ fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensiti
                 if is_debug_enabled() {
                     eprintln!("DEBUG: Directory doesn't exist, treating as pattern search");
                 }
-                let search_term_no_slash = &search_term[..search_term.len()-1];
-                let (search_root, search_pattern) = find_search_root_and_pattern(search_term_no_slash);
+                let search_term_no_slash = &search_term[..search_term.len() - 1];
+                let (search_root, search_pattern) =
+                    find_search_root_and_pattern(search_term_no_slash);
                 if let Some(root) = search_root {
                     search_absolute_pattern(&root, &search_pattern, &mut matches, case_sensitive);
                 }
@@ -538,7 +606,11 @@ fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensiti
             let (search_root, search_pattern) = find_search_root_and_pattern(search_term);
             if let Some(root) = search_root {
                 if is_debug_enabled() {
-                    eprintln!("DEBUG: Searching from root {} for pattern '{}'", root.display(), search_pattern);
+                    eprintln!(
+                        "DEBUG: Searching from root {} for pattern '{}'",
+                        root.display(),
+                        search_pattern
+                    );
                 }
                 search_absolute_pattern(&root, &search_pattern, &mut matches, case_sensitive);
             }
@@ -552,7 +624,13 @@ fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensiti
             eprintln!("DEBUG: Processing path-like pattern with '/'");
         }
         let mut context = SearchContext::new();
-        search_path_pattern_fast(current_dir, search_term, &mut matches, &mut context, case_sensitive);
+        search_path_pattern_fast(
+            current_dir,
+            search_term,
+            &mut matches,
+            &mut context,
+            case_sensitive,
+        );
         if !matches.is_empty() {
             if is_debug_enabled() {
                 eprintln!("DEBUG: Found {} matches for path pattern", matches.len());
@@ -566,16 +644,24 @@ fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensiti
     }
 
     // 1. Search up for exact matches, then partial matches (direct path to root only)
-    let up_matches = search_up_tree_with_priority(current_dir, search_term, case_sensitive, ignore_patterns);
+    let up_matches =
+        search_up_tree_with_priority(current_dir, search_term, case_sensitive, ignore_patterns);
     if is_debug_enabled() {
-        eprintln!("DEBUG: Found {} matches searching up tree", up_matches.len());
+        eprintln!(
+            "DEBUG: Found {} matches searching up tree",
+            up_matches.len()
+        );
     }
     matches.extend(up_matches);
 
     // 2. Search down for all matches (exact and partial) from current directory only
-    let down_matches = search_down_breadth_first_all(current_dir, search_term, case_sensitive, ignore_patterns);
+    let down_matches =
+        search_down_breadth_first_all(current_dir, search_term, case_sensitive, ignore_patterns);
     if is_debug_enabled() {
-        eprintln!("DEBUG: Found {} matches searching down tree", down_matches.len());
+        eprintln!(
+            "DEBUG: Found {} matches searching down tree",
+            down_matches.len()
+        );
     }
     matches.extend(down_matches);
 
@@ -593,9 +679,17 @@ fn find_matching_directories(current_dir: &Path, search_term: &str, case_sensiti
     Vec::new()
 }
 
-fn search_up_tree_with_priority(current_dir: &Path, search_term: &str, case_sensitive: bool, ignore_patterns: &[Regex]) -> Vec<DirectoryMatch> {
+fn search_up_tree_with_priority(
+    current_dir: &Path,
+    search_term: &str,
+    case_sensitive: bool,
+    ignore_patterns: &[Regex],
+) -> Vec<DirectoryMatch> {
     if is_debug_enabled() {
-        eprintln!("DEBUG: search_up_tree_with_priority: searching for '{}', case_sensitive={}", search_term, case_sensitive);
+        eprintln!(
+            "DEBUG: search_up_tree_with_priority: searching for '{}', case_sensitive={}",
+            search_term, case_sensitive
+        );
     }
 
     let mut exact_matches = Vec::new();
@@ -603,12 +697,16 @@ fn search_up_tree_with_priority(current_dir: &Path, search_term: &str, case_sens
     let mut current = current_dir;
     let mut depth = -1;
 
-    let search_lower = if case_sensitive { search_term.to_string() } else { search_term.to_lowercase() };
+    let search_lower = if case_sensitive {
+        search_term.to_string()
+    } else {
+        search_term.to_lowercase()
+    };
 
     while let Some(parent) = current.parent() {
         if let Some(name) = parent.file_name() {
             let name_str = name.to_string_lossy();
-            
+
             // Check if this directory should be ignored
             if should_ignore_directory(&name_str, ignore_patterns) {
                 if is_debug_enabled() {
@@ -618,7 +716,7 @@ fn search_up_tree_with_priority(current_dir: &Path, search_term: &str, case_sens
                 depth -= 1;
                 continue;
             }
-            
+
             let (name_compare, search_compare) = if case_sensitive {
                 (name_str.to_string(), search_term.to_string())
             } else {
@@ -657,15 +755,26 @@ fn search_up_tree_with_priority(current_dir: &Path, search_term: &str, case_sens
     result.extend(partial_matches);
 
     if is_debug_enabled() {
-        eprintln!("DEBUG: search_up_tree_with_priority completed with {} matches", result.len());
+        eprintln!(
+            "DEBUG: search_up_tree_with_priority completed with {} matches",
+            result.len()
+        );
     }
 
     result
 }
 
-fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sensitive: bool, ignore_patterns: &[Regex]) -> Vec<DirectoryMatch> {
+fn search_down_breadth_first_all(
+    current_dir: &Path,
+    search_term: &str,
+    case_sensitive: bool,
+    ignore_patterns: &[Regex],
+) -> Vec<DirectoryMatch> {
     if is_debug_enabled() {
-        eprintln!("DEBUG: search_down_breadth_first_all: searching for '{}', case_sensitive={}", search_term, case_sensitive);
+        eprintln!(
+            "DEBUG: search_down_breadth_first_all: searching for '{}', case_sensitive={}",
+            search_term, case_sensitive
+        );
     }
 
     use std::collections::VecDeque;
@@ -673,14 +782,21 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
     let mut queue = VecDeque::new();
     let mut all_matches = Vec::new();
     queue.push_back((current_dir.to_path_buf(), 0));
-    let search_lower = if case_sensitive { search_term.to_string() } else { search_term.to_lowercase() };
+    let search_lower = if case_sensitive {
+        search_term.to_string()
+    } else {
+        search_term.to_lowercase()
+    };
     let max_depth = 8;
 
     // First, search immediate subdirectories (depth 1) to check for early stopping
     let mut immediate_matches = Vec::new();
 
     if is_debug_enabled() {
-        eprintln!("DEBUG: Processing immediate subdirectories in {}", current_dir.display());
+        eprintln!(
+            "DEBUG: Processing immediate subdirectories in {}",
+            current_dir.display()
+        );
     }
 
     // Process current directory (depth 0) first
@@ -694,7 +810,7 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
                     let path = entry.path();
                     if let Some(name) = path.file_name() {
                         let name_str = name.to_string_lossy();
-                        
+
                         // Check if this directory should be ignored
                         if should_ignore_directory(&name_str, ignore_patterns) {
                             if is_debug_enabled() {
@@ -702,7 +818,7 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
                             }
                             continue;
                         }
-                        
+
                         let (name_compare, search_compare) = if case_sensitive {
                             (name_str.to_string(), search_term.to_string())
                         } else {
@@ -754,7 +870,12 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
     }
 
     // If there are exact or prefix matches in immediate subdirectories, return early to avoid deep search
-    let has_good_immediate = immediate_matches.iter().any(|m| matches!(m.match_quality, MatchQuality::ExactDown | MatchQuality::PrefixDown));
+    let has_good_immediate = immediate_matches.iter().any(|m| {
+        matches!(
+            m.match_quality,
+            MatchQuality::ExactDown | MatchQuality::PrefixDown
+        )
+    });
     if has_good_immediate {
         if is_debug_enabled() {
             eprintln!("DEBUG: Found good immediate matches, skipping deep search");
@@ -771,8 +892,12 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
         if depth == 0 || depth > max_depth {
             continue; // Skip depth 0 (already processed) and beyond max depth
         }
-        if is_debug_enabled()  {
-            eprintln!("DEBUG: Searching depth {} in {}", depth, current_path.display());
+        if is_debug_enabled() {
+            eprintln!(
+                "DEBUG: Searching depth {} in {}",
+                depth,
+                current_path.display()
+            );
         }
 
         let mut level_matches = Vec::new();
@@ -790,15 +915,19 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
                         let path = entry.path();
                         if let Some(name) = path.file_name() {
                             let name_str = name.to_string_lossy();
-                            
+
                             // Check if this directory should be ignored
                             if should_ignore_directory(&name_str, ignore_patterns) {
                                 if is_debug_enabled() {
-                                    eprintln!("DEBUG: Ignoring directory at depth {}: {}", depth + 1, name_str);
+                                    eprintln!(
+                                        "DEBUG: Ignoring directory at depth {}: {}",
+                                        depth + 1,
+                                        name_str
+                                    );
                                 }
                                 continue;
                             }
-                            
+
                             let (name_compare, search_compare) = if case_sensitive {
                                 (name_str.to_string(), search_term.to_string())
                             } else {
@@ -808,7 +937,11 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
                             // Check for any match (exact, prefix, or partial)
                             if name_compare == search_compare {
                                 if is_debug_enabled() {
-                                    eprintln!("DEBUG: Deep exact match at depth {}: {}", depth + 1, path.display());
+                                    eprintln!(
+                                        "DEBUG: Deep exact match at depth {}: {}",
+                                        depth + 1,
+                                        path.display()
+                                    );
                                 }
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
@@ -817,7 +950,11 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
                                 });
                             } else if name_compare.starts_with(&search_compare) {
                                 if is_debug_enabled() {
-                                    eprintln!("DEBUG: Deep prefix match at depth {}: {}", depth + 1, path.display());
+                                    eprintln!(
+                                        "DEBUG: Deep prefix match at depth {}: {}",
+                                        depth + 1,
+                                        path.display()
+                                    );
                                 }
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
@@ -826,7 +963,11 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
                                 });
                             } else if name_compare.contains(&search_compare) {
                                 if is_debug_enabled() {
-                                    eprintln!("DEBUG: Deep partial match at depth {}: {}", depth + 1, path.display());
+                                    eprintln!(
+                                        "DEBUG: Deep partial match at depth {}: {}",
+                                        depth + 1,
+                                        path.display()
+                                    );
                                 }
                                 level_matches.push(DirectoryMatch {
                                     path: path.clone(),
@@ -855,7 +996,10 @@ fn search_down_breadth_first_all(current_dir: &Path, search_term: &str, case_sen
     }
 
     if is_debug_enabled() {
-        eprintln!("DEBUG: search_down_breadth_first_all completed with {} total matches", all_matches.len());
+        eprintln!(
+            "DEBUG: search_down_breadth_first_all completed with {} total matches",
+            all_matches.len()
+        );
     }
 
     finalize_matches(all_matches)
@@ -865,7 +1009,13 @@ fn finalize_matches(mut matches: Vec<DirectoryMatch>) -> Vec<DirectoryMatch> {
     if is_debug_enabled() {
         eprintln!("DEBUG: finalize_matches: input {} matches", matches.len());
         for (i, m) in matches.iter().enumerate() {
-            eprintln!("DEBUG:   [{}] {:?} depth={} path={}", i, m.match_quality, m.depth_from_current, m.path.display());
+            eprintln!(
+                "DEBUG:   [{}] {:?} depth={} path={}",
+                i,
+                m.match_quality,
+                m.depth_from_current,
+                m.path.display()
+            );
         }
     }
 
@@ -926,13 +1076,18 @@ fn finalize_matches(mut matches: Vec<DirectoryMatch>) -> Vec<DirectoryMatch> {
     if is_debug_enabled() {
         eprintln!("DEBUG: After sorting: {} matches", matches.len());
         for (i, m) in matches.iter().enumerate() {
-            eprintln!("DEBUG:   [{}] {:?} depth={} path={}", i, m.match_quality, m.depth_from_current, m.path.display());
+            eprintln!(
+                "DEBUG:   [{}] {:?} depth={} path={}",
+                i,
+                m.match_quality,
+                m.depth_from_current,
+                m.path.display()
+            );
         }
     }
 
     matches
 }
-
 
 fn search_path_pattern_fast(
     current_dir: &Path,
@@ -942,13 +1097,20 @@ fn search_path_pattern_fast(
     case_sensitive: bool,
 ) {
     if is_debug_enabled() {
-        eprintln!("DEBUG: search_path_pattern_fast: current_dir={}, search_term='{}', case_sensitive={}", current_dir.display(), search_term, case_sensitive);
+        eprintln!(
+            "DEBUG: search_path_pattern_fast: current_dir={}, search_term='{}', case_sensitive={}",
+            current_dir.display(),
+            search_term,
+            case_sensitive
+        );
     }
 
     let parts: Vec<&str> = search_term.split('/').collect();
     if parts.is_empty() || !context.should_continue() {
         if is_debug_enabled() {
-            eprintln!("DEBUG: search_path_pattern_fast: early exit - parts empty or context expired");
+            eprintln!(
+                "DEBUG: search_path_pattern_fast: early exit - parts empty or context expired"
+            );
         }
         return;
     }
@@ -957,14 +1119,28 @@ fn search_path_pattern_fast(
     let remaining_parts = &parts[1..];
 
     if is_debug_enabled() {
-        eprintln!("DEBUG: search_path_pattern_fast: split into first_part='{}', remaining_parts={:?}", first_part, remaining_parts);
+        eprintln!(
+            "DEBUG: search_path_pattern_fast: split into first_part='{}', remaining_parts={:?}",
+            first_part, remaining_parts
+        );
     }
 
     // Search for the first part in current directory and subdirectories
     if is_debug_enabled() {
-        eprintln!("DEBUG: search_path_pattern_fast: starting recursive search down from current dir");
+        eprintln!(
+            "DEBUG: search_path_pattern_fast: starting recursive search down from current dir"
+        );
     }
-    search_pattern_recursive_fast(current_dir, first_part, remaining_parts, matches, context, 0, 4, case_sensitive);
+    search_pattern_recursive_fast(
+        current_dir,
+        first_part,
+        remaining_parts,
+        matches,
+        context,
+        0,
+        4,
+        case_sensitive,
+    );
 
     // Also search up the tree for the first part (but limit this to avoid slowdown)
     if is_debug_enabled() {
@@ -985,7 +1161,10 @@ fn search_path_pattern_fast(
         if let Some(name) = parent.file_name() {
             let name_str = name.to_string_lossy();
             if is_debug_enabled() {
-                eprintln!("DEBUG: search_path_pattern_fast: checking parent '{}' at depth {}", name_str, depth);
+                eprintln!(
+                    "DEBUG: search_path_pattern_fast: checking parent '{}' at depth {}",
+                    name_str, depth
+                );
             }
 
             let matches_pattern = if case_sensitive {
@@ -996,7 +1175,10 @@ fn search_path_pattern_fast(
 
             if matches_pattern {
                 if is_debug_enabled() {
-                    eprintln!("DEBUG: search_path_pattern_fast: parent '{}' contains pattern '{}'", name_str, first_part);
+                    eprintln!(
+                        "DEBUG: search_path_pattern_fast: parent '{}' contains pattern '{}'",
+                        name_str, first_part
+                    );
                 }
 
                 if remaining_parts.is_empty() {
@@ -1007,7 +1189,11 @@ fn search_path_pattern_fast(
                     };
 
                     if is_debug_enabled() {
-                        eprintln!("DEBUG: search_path_pattern_fast: adding up match {:?} for {}", match_quality, parent.display());
+                        eprintln!(
+                            "DEBUG: search_path_pattern_fast: adding up match {:?} for {}",
+                            match_quality,
+                            parent.display()
+                        );
                     }
 
                     matches.push(DirectoryMatch {
@@ -1020,7 +1206,16 @@ fn search_path_pattern_fast(
                     if is_debug_enabled() {
                         eprintln!("DEBUG: search_path_pattern_fast: recursing from parent for remaining patterns");
                     }
-                    search_pattern_recursive_fast(parent, &remaining_parts[0], &remaining_parts[1..], matches, context, depth, 3, case_sensitive);
+                    search_pattern_recursive_fast(
+                        parent,
+                        &remaining_parts[0],
+                        &remaining_parts[1..],
+                        matches,
+                        context,
+                        depth,
+                        3,
+                        case_sensitive,
+                    );
                 }
             }
         }
@@ -1030,7 +1225,10 @@ fn search_path_pattern_fast(
     }
 
     if is_debug_enabled() {
-        eprintln!("DEBUG: search_path_pattern_fast: completed with {} total matches", matches.len());
+        eprintln!(
+            "DEBUG: search_path_pattern_fast: completed with {} total matches",
+            matches.len()
+        );
     }
 }
 
@@ -1051,7 +1249,9 @@ fn search_pattern_recursive_fast(
 
     if max_depth == 0 || !context.should_continue() {
         if is_debug_enabled() {
-            eprintln!("DEBUG: search_pattern_recursive_fast: early exit - max_depth=0 or context expired");
+            eprintln!(
+                "DEBUG: search_pattern_recursive_fast: early exit - max_depth=0 or context expired"
+            );
         }
         return;
     }
@@ -1065,7 +1265,9 @@ fn search_pattern_recursive_fast(
 
             if !context.should_continue() {
                 if is_debug_enabled() {
-                    eprintln!("DEBUG: search_pattern_recursive_fast: breaking due to context timeout");
+                    eprintln!(
+                        "DEBUG: search_pattern_recursive_fast: breaking due to context timeout"
+                    );
                 }
                 break;
             }
@@ -1096,9 +1298,17 @@ fn search_pattern_recursive_fast(
                                 };
 
                                 let match_quality = if is_exact {
-                                    if base_depth < 0 { MatchQuality::ExactUp } else { MatchQuality::ExactDown }
+                                    if base_depth < 0 {
+                                        MatchQuality::ExactUp
+                                    } else {
+                                        MatchQuality::ExactDown
+                                    }
                                 } else {
-                                    if base_depth < 0 { MatchQuality::PartialUp } else { MatchQuality::PartialDown }
+                                    if base_depth < 0 {
+                                        MatchQuality::PartialUp
+                                    } else {
+                                        MatchQuality::PartialDown
+                                    }
                                 };
 
                                 if is_debug_enabled() {
@@ -1151,17 +1361,29 @@ fn search_pattern_recursive_fast(
                      entry_count, match_count, current_dir.display());
         }
     } else if is_debug_enabled() {
-        eprintln!("DEBUG: search_pattern_recursive_fast: failed to read directory {}", current_dir.display());
+        eprintln!(
+            "DEBUG: search_pattern_recursive_fast: failed to read directory {}",
+            current_dir.display()
+        );
     }
 }
 
-fn search_absolute_pattern(parent_dir: &Path, pattern: &str, matches: &mut Vec<DirectoryMatch>, case_sensitive: bool) {
+fn search_absolute_pattern(
+    parent_dir: &Path,
+    pattern: &str,
+    matches: &mut Vec<DirectoryMatch>,
+    case_sensitive: bool,
+) {
     use std::collections::VecDeque;
 
     let mut queue = VecDeque::new();
     let mut immediate_matches: Vec<DirectoryMatch> = Vec::new();
     queue.push_back((parent_dir.to_path_buf(), 0));
-    let search_lower = if case_sensitive { pattern.to_string() } else { pattern.to_lowercase() };
+    let search_lower = if case_sensitive {
+        pattern.to_string()
+    } else {
+        pattern.to_lowercase()
+    };
     let max_depth = 8;
 
     // First, search immediate subdirectories (depth 1) to check for early stopping
@@ -1305,5 +1527,3 @@ fn find_search_root_and_pattern(search_term: &str) -> (Option<PathBuf>, String) 
         .unwrap_or_else(|| search_term.trim_start_matches('/').to_string());
     (Some(PathBuf::from("/")), first_component)
 }
-
-
