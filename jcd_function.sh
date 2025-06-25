@@ -397,6 +397,12 @@ _jcd_get_relative_matches() {
 
     _jcd_debug "getting relative matches for pattern '$pattern' (case_insensitive=$case_insensitive)"
 
+    # Detect if we are on macOS (Darwin) or Linux
+    local is_darwin=0
+    if [[ "$(uname)" == "Darwin" ]]; then
+        is_darwin=1
+    fi
+
     # Handle special cases for directory navigation patterns
     case "$pattern" in
         "..")
@@ -410,8 +416,8 @@ _jcd_get_relative_matches() {
         "../.." | "../../.." | "../../../..")
             # For multiple parent levels, complete to the resolved directory
             local resolved_dir="$PWD"
-            local path_components="${pattern//[^\/]}"
-            local level_count=$((${#path_components} / 3)) # Each "../" has 3 chars including /
+            local path_components="${pattern//[^\//]}"
+            local level_count=$(( (${#path_components} + 1) / 3 )) # Each "../" has 3 chars including /
 
             for ((i=0; i<level_count; i++)); do
                 resolved_dir="$(dirname "$resolved_dir")"
@@ -452,16 +458,35 @@ _jcd_get_relative_matches() {
                 _jcd_debug "  resolved base directory: '$resolved_dir'"
 
                 if [[ -d "$resolved_dir" ]] && [[ -n "$search_part" ]]; then
-                    # Search for directories matching the pattern in the resolved directory
-                    while IFS= read -r -d $'\0' dir; do
-                        if [[ -d "$dir" ]]; then
-                            local dir_name="$(basename "$dir")"
-                            if [[ "$dir_name" == *"$search_part"* ]]; then
-                                matches+=("$dir")
-                                _jcd_debug "    found relative pattern match: '$dir'"
+                    # Portable find/sort for Linux and macOS
+                    if command -v gfind >/dev/null 2>&1; then
+                        find_cmd="gfind"
+                    else
+                        find_cmd="find"
+                    fi
+                    if [[ "$(uname)" == "Darwin" ]]; then
+                        # BSD find/sort (macOS)
+                        while IFS= read -r dir; do
+                            if [[ -d "$dir" ]]; then
+                                local dir_name="$(basename "$dir")"
+                                if [[ "$dir_name" == *"$search_part"* ]]; then
+                                    matches+=("$dir")
+                                    _jcd_debug "    found relative pattern match: '$dir'"
+                                fi
                             fi
-                        fi
-                    done < <(find "$resolved_dir" -maxdepth 1 -type d -not -path "$resolved_dir" -print0 2>/dev/null | sort -z)
+                        done < <($find_cmd "$resolved_dir" -maxdepth 1 -type d ! -path "$resolved_dir" 2>/dev/null | sort)
+                    else
+                        # GNU find/sort (Linux)
+                        while IFS= read -r -d $'\0' dir; do
+                            if [[ -d "$dir" ]]; then
+                                local dir_name="$(basename "$dir")"
+                                if [[ "$dir_name" == *"$search_part"* ]]; then
+                                    matches+=("$dir")
+                                    _jcd_debug "    found relative pattern match: '$dir'"
+                                fi
+                            fi
+                        done < <($find_cmd "$resolved_dir" -maxdepth 1 -type d ! -path "$resolved_dir" -print0 2>/dev/null | sort -z)
+                    fi
                 fi
             else
                 # Use the jcd binary directly, no per-call animation
