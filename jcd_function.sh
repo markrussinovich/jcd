@@ -90,6 +90,10 @@ jcd() {
         return 1
     fi
 
+    if [[ -z "${JCD_BINARY:-}" ]]; then
+        echo "Error: JCD_BINARY is not set. Please set the JCD_BINARY environment variable or use jcd --shell-init to configure it." >&2
+        return 1
+    fi
     local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
 
     # Ensure binary exists
@@ -339,9 +343,22 @@ _jcd_should_reset_state() {
     return 0
 }
 
-
 # Show busy indicator with dots animation for tab completion
 _jcd_show_tab_busy_indicator() {
+
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # Dot animation for macOS on a newline since the terminal does not like cursor manipulation on the same line
+        printf "\n" >&2
+        while true; do
+            for i in {1..3}; do
+                printf "\r\033[K%s" "$(printf '.%.0s' $(seq 1 $i))" >&2
+                sleep 0.3
+            done
+        done
+        printf "\r\033[K\r" >&2  # Clear line after animation ends
+        return
+    fi
+
     sleep 0.5
     local dot_count=0
     while true; do
@@ -362,8 +379,12 @@ _jcd_show_tab_busy_indicator() {
 # Wrapper to run any single function under one continuous animation
 # -----------------------------------------------------------------------------
 _jcd_run_with_animation() {
-    # **BUG FIX:** save cursor **once** before the animation begins
-    printf "\033[s" >&2
+
+    # Save cursor position not supported on Mac
+    if [[ "$(uname)" != "Darwin" ]]; then
+        # **BUG FIX:** save cursor **once** before the animation begins
+        printf "\033[s" >&2
+    fi
 
     # start the spinner in the background
     _jcd_show_tab_busy_indicator &
@@ -378,8 +399,11 @@ _jcd_run_with_animation() {
     kill $animation_pid 2>/dev/null
     wait $animation_pid 2>/dev/null
 
-    # **BUG FIX:** restore cursor and clear the line after animation
-    printf "\033[u\033[K" >&2
+    # Restore cursor position not supported on Mac
+    if [[ "$(uname)" != "Darwin" ]]; then
+        # **BUG FIX:** restore cursor and clear the line after animation
+        printf "\033[u\033[K" >&2
+    fi
 
     # emit the actual output to the caller
     echo "$output"
