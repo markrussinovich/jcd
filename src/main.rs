@@ -1,4 +1,4 @@
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use std::{
     env, fs,
     io::{self, Write},
@@ -12,6 +12,8 @@ use std::{
 // Configuration constants for performance tuning
 const MAX_MATCHES: usize = 20; // Stop after finding enough matches
 const MAX_SEARCH_TIME_MS: u64 = 500; // Max time to spend searching (milliseconds)
+const MAX_IGNORE_PATTERNS: usize = 100; // Upper bound on loaded ignore patterns
+const MAX_COMPILED_REGEX_SIZE: usize = 1_000_000; // 1MB compiled regex size limit
 
 /// Get ignore file paths in priority order following XDG Base Directory Specification
 fn get_ignore_file_paths() -> Vec<PathBuf> {
@@ -56,8 +58,20 @@ fn parse_ignore_patterns(content: &str) -> Vec<Regex> {
         }
 
         // Try to compile the regex pattern
-        match Regex::new(line) {
-            Ok(regex) => patterns.push(regex),
+        match RegexBuilder::new(line)
+            .size_limit(MAX_COMPILED_REGEX_SIZE)
+            .build()
+        {
+            Ok(regex) => {
+                if patterns.len() < MAX_IGNORE_PATTERNS {
+                    patterns.push(regex);
+                } else if is_debug_enabled() {
+                    eprintln!(
+                        "DEBUG: Ignored pattern due to max pattern count (100): '{}'",
+                        line
+                    );
+                }
+            }
             Err(e) => {
                 if is_debug_enabled() {
                     eprintln!("DEBUG: Invalid regex pattern '{}': {}", line, e);
