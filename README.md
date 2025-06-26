@@ -30,7 +30,7 @@
    ```
 
 2. **Add to Shell Configuration**:
-   Add the following lines to your `~/.bashrc` (replace `/path/to/jcd` with your actual path):
+   Add the following lines to your `~/.bashrc` or `~/.zshrc` (replace `/path/to/jcd` with your actual path):
    ```bash
    export JCD_BINARY="/path/to/jcd/target/release/jcd"
    source /path/to/jcd/jcd_function.sh
@@ -268,7 +268,7 @@ echo "tmp.*|temp.*|\\.tmp" > .jcdignore
 When multiple ignore files exist:
 
 1. **Project-local** `.jcdignore` has highest precedence
-2. **User config** `~/.config/jcd/ignore` 
+2. **User config** `~/.config/jcd/ignore`
 3. **Legacy user** `~/.jcdignore`
 4. **System-wide** `/etc/jcd/ignore` has lowest precedence
 
@@ -382,7 +382,7 @@ The project includes a comprehensive test suite located in the `tests/` director
 # Quick validation for CI/CD
 ./tests/validate_jcd.sh
 
-# Validate Shift+Tab functionality 
+# Validate Shift+Tab functionality
 ./tests/validate_shift_tab.sh
 
 # Simple functionality test
