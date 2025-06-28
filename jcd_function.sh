@@ -384,7 +384,7 @@ _jcd_run_with_animation() {
     kill $animation_pid 2>/dev/null
     wait $animation_pid 2>/dev/null
 
-    # Restore cursor position not supported on Mac
+    # Restore cursor position
     tput rc >&2
 
     # emit the actual output to the caller
