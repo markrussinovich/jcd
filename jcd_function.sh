@@ -346,24 +346,12 @@ _jcd_should_reset_state() {
 # Show busy indicator with dots animation for tab completion
 _jcd_show_tab_busy_indicator() {
 
-    if [[ "$(uname)" == "Darwin" ]]; then
-        # Dot animation for macOS on a newline since the terminal does not like cursor manipulation on the same line
-        printf "\n" >&2
-        while true; do
-            for i in {1..3}; do
-                printf "\r\033[K%s" "$(printf '.%.0s' $(seq 1 $i))" >&2
-                sleep 0.3
-            done
-        done
-        printf "\r\033[K\r" >&2  # Clear line after animation ends
-        return
-    fi
-
     sleep 0.5
     local dot_count=0
     while true; do
-        # restore to saved spot, clear line
-        printf "\033[u\033[K" >&2
+        tput rc >&2  # Restore cursor position
+        tput el >&2  # Clear the line
+
         case $dot_count in
             0) printf "" >&2 ;;
             1) printf "." >&2 ;;
@@ -380,11 +368,8 @@ _jcd_show_tab_busy_indicator() {
 # -----------------------------------------------------------------------------
 _jcd_run_with_animation() {
 
-    # Save cursor position not supported on Mac
-    if [[ "$(uname)" != "Darwin" ]]; then
-        # **BUG FIX:** save cursor **once** before the animation begins
-        printf "\033[s" >&2
-    fi
+    # Save cursor position
+    tput sc >&2
 
     # start the spinner in the background
     _jcd_show_tab_busy_indicator &
@@ -400,10 +385,7 @@ _jcd_run_with_animation() {
     wait $animation_pid 2>/dev/null
 
     # Restore cursor position not supported on Mac
-    if [[ "$(uname)" != "Darwin" ]]; then
-        # **BUG FIX:** restore cursor and clear the line after animation
-        printf "\033[u\033[K" >&2
-    fi
+    tput rc >&2
 
     # emit the actual output to the caller
     echo "$output"
