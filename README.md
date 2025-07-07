@@ -1,6 +1,6 @@
 # JCD - Enhanced Directory Navigation Tool
 
-`jcd` is a Rust-based command-line tool that provides enhanced directory navigation with substring matching and smart selection. It's like the `cd` command, but with superpowers!
+`jcd` is a Rust-based command-line tool that provides enhanced directory navigation with substring matching and smart selection. It's like the `cd` command, but with superpowers! 
 
 ![JCD Demo](https://github.com/markrussinovich/jcd/blob/main/assets/jcd.gif?raw=true)
 
@@ -318,6 +318,8 @@ The `jcd` tool works in two parts:
 
 ## Technical Details
 
+_JCD was vibe coded by Mark Russinovich, Mario Hewardt with Github Copilot Agent and Claude Sonnet 4._ 
+
 - **Language**: Rust for performance and reliability
 - **Dependencies**: `regex` crate for ignore pattern matching
 - **Architecture**: Rust binary + enhanced bash wrapper function
@@ -420,14 +422,6 @@ jcd ../proj   # Should match project directories in parent
 ```
 
 See `tests/README.md` for detailed information about the test suite.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
 
 ## License
 
