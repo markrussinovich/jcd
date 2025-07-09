@@ -5,7 +5,6 @@
 
 _jcd_print_usage() {
     echo "Usage:"
-    echo "  jcd [--shell-init [path/to/jcd]]    - Adds JCD initialization to your shell rc file (e.g. .bashrc)"
     echo "  jcd [-i] <directory_pattern>        - Changes directory according to the pattern"
     echo
     echo "directory_pattern:"
@@ -21,54 +20,6 @@ jcd() {
 
     while [[ $# -gt 0 ]]; do
         case $1 in
-            --shell-init)
-                # Detect shell and pick appropriate rc file
-                local RC_FILE
-                if [[ -n "$ZSH_VERSION" ]] || [[ "${SHELL:-}" =~ zsh$ ]]; then
-                    RC_FILE="$HOME/.zshrc"
-                else
-                    RC_FILE="$HOME/.bashrc"
-                fi
-                local JCD_FUNC_PATH
-                if [[ -n "$ZSH_VERSION" ]]; then
-                    JCD_FUNC_PATH="$(realpath "${(%):-%N}")"
-                elif [[ -n "$BASH_SOURCE" ]]; then
-                    JCD_FUNC_PATH="$(realpath "${BASH_SOURCE[0]}")"
-                else
-                    JCD_FUNC_PATH="$(realpath "$0")"
-                fi
-
-                local JCD_PATH
-                if [[ -n "$2" && ! "$2" =~ ^- ]]; then
-                    JCD_PATH="$2"
-                elif [[ -x "/usr/bin/jcd" ]]; then
-                    JCD_PATH="/usr/bin/jcd"
-                else
-                    echo "Error: Could not determine the path to the jcd binary."
-                    echo "Please specify the path explicitly: jcd --shell-init /path/to/jcd"
-                    return 1
-                fi
-
-                local EXPORT_LINE="export JCD_BINARY=\"$JCD_PATH\""
-                local SOURCE_LINE="source $JCD_FUNC_PATH"
-
-                # Update or append export line
-                if grep -q '^export JCD_BINARY=' "$RC_FILE"; then
-                    sed -i "s|^export JCD_BINARY=.*|$EXPORT_LINE|" "$RC_FILE"
-                else
-                    echo "$EXPORT_LINE" >> "$RC_FILE"
-                fi
-
-                # Update or append source line
-                if grep -q '^source .*/jcd_function.sh' "$RC_FILE"; then
-                    sed -i "s|^source .*/jcd_function.sh.*|$SOURCE_LINE|" "$RC_FILE"
-                else
-                    echo "$SOURCE_LINE" >> "$RC_FILE"
-                fi
-
-                echo "JCD: $(basename "$RC_FILE") updated. Please run 'source $RC_FILE' or open a new terminal to activate."
-                return 0
-                ;;
             -i)
                 case_insensitive=true
                 shift
@@ -90,11 +41,7 @@ jcd() {
         return 1
     fi
 
-    if [[ -z "${JCD_BINARY:-}" ]]; then
-        echo "Error: JCD_BINARY is not set. Please set the JCD_BINARY environment variable or use jcd --shell-init to configure it." >&2
-        return 1
-    fi
-    local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
+    local jcd_binary="${JCD_BINARY:-/usr/bin/jcd}"
 
     # Ensure binary exists
     if [ ! -x "$jcd_binary" ]; then
@@ -396,7 +343,7 @@ _jcd_run_with_animation() {
 _jcd_get_relative_matches() {
     local pattern="$1"
     local case_insensitive="$2"  # true/false
-    local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
+    local jcd_binary="${JCD_BINARY:-/usr/bin/jcd}"
     local matches=()
     local idx=0
     local match
@@ -536,7 +483,7 @@ _jcd_get_relative_matches() {
 _jcd_get_absolute_matches() {
     local pattern="$1"
     local case_insensitive="$2"  # true/false
-    local jcd_binary="${JCD_BINARY:-/datadrive/jcd/target/release/jcd}"
+    local jcd_binary="${JCD_BINARY:-/usr/bin/jcd}"
     local matches=()
 
     _jcd_debug "getting absolute matches for pattern '$pattern' (case_insensitive=$case_insensitive)"
@@ -989,7 +936,6 @@ if [[ -n "${BASH_VERSION:-}" ]]; then
     # Clear any existing state when script is loaded to ensure clean start
     _jcd_reset_state
 
-    echo "JCD completion loaded for bash. Set JCD_DEBUG=1 to enable debug output." >&2
 elif [[ -n "${ZSH_VERSION:-}" ]]; then
     # We're in zsh - set up zsh completion
     autoload -U compinit

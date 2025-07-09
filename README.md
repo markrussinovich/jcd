@@ -1,6 +1,6 @@
 # JCD - Enhanced Directory Navigation Tool
 
-`jcd` (Jump Change Directory) is a Rust-based command-line tool that provides enhanced directory navigation with substring matching and smart selection. It's like the `cd` command, but with superpowers! 
+`jcd` (Jump Change Directory) is a Rust-based command-line tool that provides enhanced directory navigation with substring matching and smart selection. It's like the `cd` command, but with superpowers!
 
 ![JCD Demo](https://github.com/markrussinovich/jcd/blob/main/assets/jcd.gif?raw=true)
 
@@ -40,6 +40,12 @@
    ```bash
    source ~/.bashrc
    ```
+4. **Build Packages**:
+   ```
+   cargo deb
+   or
+   cargo rpm
+   ```
 
 > **Note**: The shell function integration is **required** because a Rust binary cannot change the directory of its parent shell process. The `jcd_function.sh` wrapper handles this limitation by calling the binary and then changing directories based on its output.
 
@@ -47,7 +53,6 @@
 
 ```bash
 Usage:
-  jcd [--shell-init [path/to/jcd]]    - Adds JCD initialization to your shell rc file (e.g. .bashrc)
   jcd [-i] [-x] <directory_pattern>   - Changes directory according to the pattern
 
 Flags:
@@ -318,7 +323,7 @@ The `jcd` tool works in two parts:
 
 ## Technical Details
 
-_JCD was vibe coded by Mark Russinovich, Mario Hewardt with Github Copilot Agent and Claude Sonnet 4._ 
+_JCD was vibe coded by Mark Russinovich, Mario Hewardt with Github Copilot Agent and Claude Sonnet 4._
 
 - **Language**: Rust for performance and reliability
 - **Dependencies**: `regex` crate for ignore pattern matching

@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "jcd"
-version = "1.0.1"
+version = "2.2.2"
 dependencies = [
  "regex",
 ]
