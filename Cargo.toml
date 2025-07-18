@@ -3,12 +3,12 @@
 # --------------------------------------------------------------------------------
 [package]
 name = "jcd"
-version = "2.2.2"
+version = "0.0.0"
 edition = "2021"
 description = "Enhanced directory navigation tool with substring matching and tab completion cycling"
 authors = ["GitHub Copilot Assistant"]
 license = "MIT"
-repository = "https://github.com/username/jcd"
+repository = "https://github.com/microsoft/jcd"
 keywords = ["cli", "navigation", "directory", "filesystem", "productivity"]
 categories = ["command-line-utilities", "filesystem"]
 
@@ -20,8 +20,10 @@ maintainer = "Sysinternals <syssite@microsoft.com>"
 name = "jcd"
 extended-description = "jcd (Jump Change Directory) is a Rust-based command-line tool that provides enhanced directory navigation with substring matching and smart selection. It's like the cd command, but with superpowers!"
 maintainer-scripts = "debian/"
-
 assets = [
-    ["target/release/jcd", "usr/bin/jcd", "755"],
-    ["jcd_function.sh", "usr/bin/jcd_function.sh", "755"]
+    ["target/release/jcd", "usr/bin/jcd", "755"]
 ]
+
+[package.metadata.rpm.targets]
+jcd = { path = "/usr/bin/jcd" }
+
