@@ -1,0 +1,10 @@
+parameters:
+- name: srcPath
+  type: string
+  default: '.'
+
+steps:
+- script: |
+    cd ${{ parameters.srcPath }}
+    cargo build --release
+  displayName: "Build jcd"
